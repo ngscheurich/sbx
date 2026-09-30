@@ -55,11 +55,11 @@ func TestDiscoverInWorktreeRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if info.WorktreeRoot != wt {
-		t.Errorf("WorktreeRoot = %q, want %q", info.WorktreeRoot, wt)
+	if info.WorktreeRoot != resolve(t, wt) {
+		t.Errorf("WorktreeRoot = %q, want symlink-free %q", info.WorktreeRoot, resolve(t, wt))
 	}
-	if info.CommonDir != filepath.Join(repo, ".git") {
-		t.Errorf("CommonDir = %q, want %q", info.CommonDir, filepath.Join(repo, ".git"))
+	if info.CommonDir != resolve(t, filepath.Join(repo, ".git")) {
+		t.Errorf("CommonDir = %q, want symlink-free %q", info.CommonDir, resolve(t, filepath.Join(repo, ".git")))
 	}
 }
 
@@ -76,8 +76,8 @@ func TestDiscoverFromNestedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if info.WorktreeRoot != wt {
-		t.Errorf("WorktreeRoot = %q, want the worktree root %q, not the nested directory", info.WorktreeRoot, wt)
+	if info.WorktreeRoot != resolve(t, wt) {
+		t.Errorf("WorktreeRoot = %q, want the worktree root %q, not the nested directory", info.WorktreeRoot, resolve(t, wt))
 	}
 }
 
@@ -135,7 +135,24 @@ func TestDiscoverBareRepoNamedDotGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if info.CommonDir != bare {
-		t.Errorf("CommonDir = %q, want %q", info.CommonDir, bare)
+	if info.CommonDir != resolve(t, bare) {
+		t.Errorf("CommonDir = %q, want symlink-free %q", info.CommonDir, resolve(t, bare))
 	}
+}
+
+// resolve returns the absolute, symlink-free form of path — the same form
+// Discover is required to produce. On macOS the temporary directory itself
+// sits behind the /private symlink, so raw t.TempDir paths never match
+// directly.
+func resolve(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, err := filepath.Abs(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
 }
