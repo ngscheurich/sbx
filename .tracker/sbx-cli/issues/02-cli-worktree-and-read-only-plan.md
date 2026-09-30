@@ -1,6 +1,6 @@
 # Start sbx with worktree identity and a read-only plan
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 
 ## Goal
@@ -16,3 +16,23 @@ Create the Go module `github.com/ngscheurich/sbx` and `cmd/sbx`. From a nested d
 ## References
 
 [Discovery, identity, configuration, commands and read-only behavior](../spec.md); [domain vocabulary](../../../CONTEXT.md).
+
+## Comments
+
+Implemented in db98804, 430038e, and e9cf0ce on `main`.
+
+- Go module `github.com/ngscheurich/sbx` and `cmd/sbx`; `sbx plan` finds the
+  worktree root and checkout's `sbx.toml` from a nested directory, derives
+  the Sandbox identity and Project volume namespace (ADR-0003, ADR-0005),
+  and renders a clearly-partial preview with no host or project writes.
+- Strict TOML: unknown keys, wrong types, invalid sizes, egress, and
+  allowlist entries rejected; all not-yet-translatable fields rejected
+  explicitly (`workspace`, `mounts`, `volumes`, `secrets`, `ports`, `env`,
+  `build`, `bootstrap`, `image_check`, `dns_nameservers`).
+- Help lists only v1 commands; `exec` and `run` keep their names.
+- Tests cover temp repos, linked worktrees, missing/outside-worktree cases,
+  identity stability across config edits and branch switches, and distinct
+  identities for same-named worktrees at different paths; macOS symlink
+  resolution is handled (the `/private` prefix).
+- Choice deferred to ticket 05: exact literal Project volume name shape is
+  `<namespace hash>-<logical name>`.
