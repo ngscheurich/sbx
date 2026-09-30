@@ -1,0 +1,27 @@
+[tools]
+go = "1.27.1"
+
+[tasks.build]
+description = "Build for current platform"
+run = 'go build -o "bin/sbx-$(go env GOOS)-$(go env GOARCH)" ./cmd/sbx'
+
+[tasks.clean]
+description = "Remove all build artifacts"
+run = "rm -f bin/*"
+
+[tasks.test]
+description = "Run test suite"
+run = "go test ./..."
+
+[tasks.vet]
+description = "Check source code for suspicious constructs"
+run = "go vet ./..."
+
+[tasks.format]
+description = "Format source code"
+run = "go fmt ./..."
+
+[tasks.ci]
+description = "Run CI gates locally"
+depends = ["test", "vet"]
+run = "gofmt -l cmd internal"
