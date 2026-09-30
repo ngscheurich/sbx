@@ -9,7 +9,6 @@ func TestProjectBasename(t *testing.T) {
 	}{
 		{"/src/app/.git", "app"},
 		{"/src/app.git", "app"},
-		{"/src/app/.git", "app"},
 		{"/worktrees/repo.dot.git", "repo.dot"},
 		{"/src/app/.git/", "app"},
 	}

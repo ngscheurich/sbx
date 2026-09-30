@@ -60,10 +60,19 @@ func Load(path string) (Config, error) {
 	if err := strictFields(md); err != nil {
 		return Config{}, err
 	}
+	cfg.applyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// applyDefaults fills optional fields with their documented defaults so
+// callers always see a complete configuration.
+func (c *Config) applyDefaults() {
+	if c.Shell == "" {
+		c.Shell = "/bin/sh"
+	}
 }
 
 // strictFields rejects every key the target struct does not recognize, so
@@ -99,9 +108,6 @@ func (c *Config) Validate() error {
 	}
 	if !sizeRe.MatchString(c.Memory) {
 		problems = append(problems, `memory: required, an integer with a "K", "M", or "G" suffix such as 512M`)
-	}
-	if c.Shell == "" {
-		c.Shell = "/bin/sh"
 	}
 	problems = append(problems, c.Network.validate()...)
 	if len(problems) > 0 {

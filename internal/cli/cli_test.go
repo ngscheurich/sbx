@@ -75,6 +75,16 @@ func TestNoArgsShowsHelp(t *testing.T) {
 	}
 }
 
+func TestPlanRejectsUnexpectedArguments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"plan", "--verbose"}, &stdout, &stderr); code == 0 {
+		t.Fatal("plan accepted an unsupported flag")
+	}
+	if !strings.Contains(stderr.String(), "--verbose") {
+		t.Errorf("stderr does not name the offending argument:\n%s", stderr.String())
+	}
+}
+
 func TestUnknownCommandFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"deploy"}, &stdout, &stderr); code == 0 {

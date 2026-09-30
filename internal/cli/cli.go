@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/gitx"
@@ -45,6 +46,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, helpText)
 		return exitOK
 	case "plan":
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "sbx: plan takes no arguments or flags yet, got %q\n", strings.Join(args[1:], " "))
+			return exitUsage
+		}
 		return runPlan(stdout, stderr)
 	case "-V", "--version", "version":
 		fmt.Fprintln(stdout, "sbx (development build)")
