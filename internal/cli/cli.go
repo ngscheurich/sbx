@@ -76,4 +76,3 @@ func runPlan(stdout, stderr io.Writer) int {
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
 }
-

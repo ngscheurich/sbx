@@ -286,7 +286,6 @@ func planIdentity(t *testing.T, dir string) string {
 	return ""
 }
 
-
 func dirSnapshot(t *testing.T, dir string) string {
 	t.Helper()
 	var b strings.Builder

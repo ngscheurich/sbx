@@ -244,15 +244,15 @@ egress = "public"
 
 func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	tests := map[string]string{
-		"workspace":     "[workspace]\ntarget = \"/work\"",
-		"mounts":        "[[mounts]]\ntype = \"bind\"\nsource = \"./x\"\ntarget = \"/x\"",
-		"volumes":       "[volumes.cache]\ntarget = \"/cache\"\nscope = \"project\"",
-		"secrets":       "[secrets.TOKEN]\nfrom_env = \"TOKEN\"\nallow = [\"example.com\"]",
-		"ports":         "[ports.web]\nguest = 4000",
-		"env":           "[env]\nFOO = \"bar\"",
-		"build":         "[build]\ncontext = \".\"",
-		"bootstrap":     "[bootstrap]\nrun = \"echo hi\"",
-		"image_check":   "image_check = \"check.sh\"",
+		"workspace":   "[workspace]\ntarget = \"/work\"",
+		"mounts":      "[[mounts]]\ntype = \"bind\"\nsource = \"./x\"\ntarget = \"/x\"",
+		"volumes":     "[volumes.cache]\ntarget = \"/cache\"\nscope = \"project\"",
+		"secrets":     "[secrets.TOKEN]\nfrom_env = \"TOKEN\"\nallow = [\"example.com\"]",
+		"ports":       "[ports.web]\nguest = 4000",
+		"env":         "[env]\nFOO = \"bar\"",
+		"build":       "[build]\ncontext = \".\"",
+		"bootstrap":   "[bootstrap]\nrun = \"echo hi\"",
+		"image_check": "image_check = \"check.sh\"",
 		"dns_nameservers": `image = "alpine"
 cpus = 1
 memory = "1G"
@@ -262,7 +262,7 @@ dns_nameservers = ["1.1.1.1"]`,
 	}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := Load(write(t, content + "\n"))
+			_, err := Load(write(t, content+"\n"))
 			if err == nil {
 				t.Fatalf("Load succeeded for unsupported field %q", name)
 			}
