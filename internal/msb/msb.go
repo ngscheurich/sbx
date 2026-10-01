@@ -271,7 +271,9 @@ func CreateArgs(o CreateOptions) []string {
 	for _, m := range o.Mounts {
 		spec := m.Source + ":" + m.Target
 		if m.ReadOnly {
-			spec += ":ro" // :ro is in msb's documented mount option grammar
+			// :ro verified on a real host for --mount-file (ticket 04);
+			// the spelling on --mount-dir remains unverified.
+			spec += ":ro"
 		}
 		flag := "--mount-dir"
 		if m.IsFile {

@@ -88,3 +88,14 @@ the Workspace, and msb rejects a file source with "mount-dir source is not a
 directory". sbx now classifies each resolved bind source with the `os.Stat`
 it already performs and emits `--mount-file` for a regular file,
 `--mount-dir` for a directory. Pinned tests updated on both surfaces.
+
+## Comments (addendum 3)
+
+Manual verification on msb 0.7.5 resolved one unverified item: the `:ro`
+bind option is honored. The owner layered the fixture's `read_only = true`
+file bind over the Workspace mount itself (`target` inside `/workspace`)
+and the guest write to that path was denied, confirming both that msb
+applies `:ro` on `--mount-file` and that per-mount-point read-only layers
+work over read-write ones. The spec's backend verification records the
+observation; `:ro` on `--mount-dir` and the `:noexec` tmpfs spelling are
+still unverified.
