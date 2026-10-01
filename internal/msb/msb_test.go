@@ -83,8 +83,9 @@ func TestCreateWithoutNetConfAndFractionalCPUs(t *testing.T) {
 }
 
 // TestRunExactArgv pins msb run, the native one-shot: create-time settings,
-// an empty --entrypoint to neutralize the image entrypoint (ADR-0007), the
-// stream mode, and the guest command after --.
+// the stream mode, and the guest command after --. msb run replaces the
+// image CMD while preserving its effective entrypoint, and sbx matches that
+// native behavior.
 func TestRunExactArgv(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	box := CLI{}
@@ -117,7 +118,6 @@ func TestRunExactArgv(t *testing.T) {
 		"--label", "sbx.managed=1",
 		"--no-net",
 		"--workdir", "/workspace",
-		"--entrypoint", "",
 		"--no-tty",
 		"--", "echo", "hi",
 	}

@@ -15,7 +15,7 @@ Add a testable msb subprocess seam and `sbx run [-- <argv...>]` for a prebuilt i
 
 ## References
 
-[Disposable runs, backend and images](../spec.md); [ADR-0006](../../../docs/adrs/0006-drive-msb-through-its-cli.md); [ADR-0007](../../../docs/adrs/0007-ignore-image-entrypoint-and-cmd.md).
+[Disposable runs, backend and images](../spec.md); [ADR-0006](../../../docs/adrs/0006-drive-msb-through-its-cli.md). ADR-0007 was removed by decision of the owner (see addendum 3).
 
 ## Comments
 
@@ -45,6 +45,17 @@ Implemented on `main`.
   the guest (sbx currently SIGTERMs the msb subprocess's process group and
   exits with 128+sig), the `:ro` mount option spelling, and whether `msb
   remove --force` succeeds while the sandbox runs.
+
+## Comments (addendum 3)
+
+`--entrypoint ""` failed on a real host (`invalid config: entrypoint
+executable must not be empty`), and the owner decided sbx should match msb's
+native command semantics rather than fight them: ADR-0007 is removed, the
+spec's command section and Disposable-runs section were rewritten, and sbx
+no longer passes `--entrypoint` at all. `msb run`'s behavior — image CMD
+replaced by the command, effective entrypoint preserved around it — now
+applies to `sbx run`; `msb exec` (the persistent-sandbox path, ticket 06)
+runs argv as given.
 
 ## Comments (addendum 2)
 

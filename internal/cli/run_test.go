@@ -74,7 +74,6 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 		"--label", "sbx.mode=disposable",
 		"--label", "sbx.worktree=" + worktreeOf(t, fake),
 		"--workdir", "/workspace",
-		"--entrypoint", "",
 		"--no-tty",
 		"--", "echo", "hello",
 	}
@@ -145,7 +144,6 @@ egress = "none"
 		"--label", "sbx.worktree=" + worktreeOf(t, fake),
 		"--no-net",
 		"--workdir", "/workspace",
-		"--entrypoint", "",
 		"--no-tty",
 		"--", "/bin/bash",
 	}

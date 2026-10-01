@@ -242,7 +242,7 @@ The fixture also contains `index.html` with `sbx fixture\n`. The `data` and `art
 | `sbx rm [--yes]` | After confirmation, which noninteractive use gives with `--yes`, remove the persistent sandbox and list the Sandbox volumes lost. Keeps Project volumes and Port reservations. |
 | `sbx port prune` | Remove Port reservations for sandboxes that no longer exist; keep those for stopped ones. Fails safely if the backend cannot be inspected. |
 
-`exec` and `run` forward input, output, and signals, and exit with the guest command's status. They pass argv to the guest directly, never through a host shell, and ignore the image's ENTRYPOINT and CMD ([ADR-0007](../../docs/adrs/0007-ignore-image-entrypoint-and-cmd.md)). Bootstrap runs through `<shell> -c` in the Workspace.
+`exec` and `run` forward input, output, and signals, and exit with the guest command's status. They pass argv to the guest directly, never through a host shell, and match each mode's native msb command behavior: `msb run` replaces the image CMD while preserving its effective entrypoint, and `msb exec` runs argv as given. Bootstrap runs through `<shell> -c` in the Workspace.
 
 **Command names to revisit.** `exec` and `run` differ only in which sandbox they use, yet read as synonyms. Rename them before v1 so each name conveys its mode; this spec uses the current names until then.
 
@@ -262,7 +262,7 @@ Creation-time settings are captured at creation, in a snapshot stored in the hos
 
 ### Disposable runs
 
-A disposable run is a single `msb run` subprocess: a uniquely named sandbox created with `--name`, owned and mode labels, the Workspace, the translated resources, and the network policy, running the command (or the configured shell) after `--`. sbx delegates the sandbox's whole lifecycle to `msb run` and adds no cleanup step of its own. sbx neutralizes the image's effective entrypoint with an empty `--entrypoint` so a command runs exactly as given (ADR-0007). It has no incomplete state to repair, needs no lock, and publishes no ports.
+A disposable run is a single `msb run` subprocess: a uniquely named sandbox created with `--name`, owned and mode labels, the Workspace, the translated resources, and the network policy, running the command (or the configured shell) after `--`. sbx delegates the sandbox's whole lifecycle to `msb run` and adds no cleanup step of its own; the image's effective entrypoint applies, exactly as it does for `msb run`. It has no incomplete state to repair, needs no lock, and publishes no ports.
 
 ### Port reservations
 
@@ -294,7 +294,7 @@ Automated tests run without virtualization, using fake `msb` and Docker executab
 - disposable-run cleanup, including after failures;
 - secret redaction in sbx-generated output, and Plan purity;
 - Image-check gating in both modes, including prebuilt and changed images;
-- that both modes ignore ENTRYPOINT and CMD, and that disposable runs publish no ports;
+- that disposable runs publish no ports and follow msb run's native command semantics;
 - Port reservations, collisions with unmanaged msb sandboxes, concurrent callers, and pruning;
 - volume kinds and scopes, Sandbox-volume removal, Project-volume retention, and Project-volume conflicts;
 - exit-status and output propagation.

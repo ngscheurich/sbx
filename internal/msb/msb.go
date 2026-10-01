@@ -185,9 +185,7 @@ type CreateOptions struct {
 // Flag spellings come from real msb 0.7.3: `msb create [OPTIONS] [IMAGE]`
 // with `--name`, `-c/--cpus`, `-m/--memory`, `--mount-dir SOURCE:DEST`,
 // repeatable `--label KEY=VALUE`, and `--no-net` for no network access.
-// The image's ENTRYPOINT and CMD play no part here: msb boots the VM
-// without running the image's default command, and sbx never consults
-// either (ADR-0007).
+// msb boots the VM without running the image's default command.
 func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 	args := append([]string{"create"}, createArgs(o)...)
 	if _, err := c.run(ctx, args...); err != nil {
@@ -227,23 +225,20 @@ type RunOptions struct {
 	CreateOptions
 	// Workdir is the guest working directory for the command.
 	Workdir string
-	// Argv is the guest command, run directly (ADR-0007).
+	// Argv is the guest command. msb run replaces the image CMD while
+	// preserving its effective entrypoint, and sbx matches that native
+	// behavior rather than neutralizing it.
 	Argv []string
 }
 
 // Run is msb's native one-shot: it creates the sandbox and runs the command
-// in a single subprocess. sbx still owns cleanup and removes the sandbox
-// itself afterwards, because `msb run --help` documents no removal-on-exit.
-// ADR-0007: msb run preserves the image's effective entrypoint when a
-// command is given, so sbx always passes an empty --entrypoint to neutralize
-// it (UNVERIFIED on a real host) and keep `sbx run -- x` equivalent to `sbx
-// exec -- x`.
+// in a single subprocess. The sandbox's whole lifecycle is msb run's own
+// behavior; sbx adds no cleanup step.
 func (c CLI) Run(ctx context.Context, o RunOptions, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	args := append([]string{"run"}, createArgs(o.CreateOptions)...)
 	if o.Workdir != "" {
 		args = append(args, "--workdir", o.Workdir)
 	}
-	args = append(args, "--entrypoint", "")
 	if stdinIsTerminal(stdin) {
 		args = append(args, "--tty")
 	} else {

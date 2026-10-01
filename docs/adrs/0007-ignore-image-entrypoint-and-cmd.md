@@ -1,3 +1,0 @@
-# ADR-0007: Ignore the image's ENTRYPOINT and CMD
-
-`msb create` boots a VM without running the image's default command, and `msb exec` runs argv directly. `msb run`, the native one-shot, instead replaces the image CMD while preserving its effective entrypoint; sbx's disposable runs use it and always pass an empty `--entrypoint` to neutralize that entrypoint, so honoring neither is preserved in every mode: a command runs as given, and no command opens the configured shell. Images whose ENTRYPOINT performs setup need that setup moved into Bootstrap. Honoring them later would change what existing projects' commands do.
