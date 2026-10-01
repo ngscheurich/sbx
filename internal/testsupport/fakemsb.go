@@ -84,7 +84,11 @@ exec)
     echo "sbx-fake-msb: cannot start the guest" >&2
     exit 127
   fi
-  cat > "$dir/stdin"
+  if [ -n "$FAKE_MSB_EXEC_NO_STDIN_READ" ]; then
+    : > "$dir/stdin"
+  else
+    cat > "$dir/stdin"
+  fi
   printf 'guest-stdout\n'
   printf 'guest-stderr\n' >&2
   exit "${FAKE_MSB_EXIT:-0}"

@@ -3,6 +3,7 @@ package msb
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -130,6 +131,28 @@ func TestExecArgvAndStreams(t *testing.T) {
 	want := []string{"exec", "box-run-abc", "--workdir", "/workspace", "--stream", "--", "go", "version"}
 	if got := calls[0].Args; !equal(got, want) {
 		t.Errorf("exec argv mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+// TestExecUsesTtyOnTerminalStdin checks that an interactive terminal gets
+// --tty instead of --stream, per msb 0.7.3's exclusivity rule.
+func TestExecUsesTtyOnTerminalStdin(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	t.Setenv("FAKE_MSB_EXEC_NO_STDIN_READ", "1") // a PTY master never EOFs
+	ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Skipf("no pty available: %v", err)
+	}
+	t.Cleanup(func() { ptmx.Close() })
+
+	box := CLI{}
+	code, err := box.Exec(context.Background(), "box", "/workspace", []string{"ls"}, ptmx, nil, nil)
+	if err != nil || code != 0 {
+		t.Fatalf("exec: code=%d err=%v", code, err)
+	}
+	got := fake.Calls()[0].Args
+	if !contains(got, "--tty") || contains(got, "--stream") {
+		t.Errorf("terminal stdin should select --tty, got %q", got)
 	}
 }
 

@@ -23,6 +23,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // BackendEnv is the environment variable that selects msb's backend.
@@ -212,17 +214,24 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 }
 
 // Exec runs argv in the named sandbox, forwarding the standard streams and
-// returning the guest's exit status. --stream gives byte-faithful piping
-// without a PTY (msb 0.7.3), matching sbx's forwarding semantics; a PTY
-// would reintroduce echo and CRLF translation. Signals are delivered to the
-// msb subprocess's process group; whether msb forwards them into the guest
-// is UNVERIFIED (ticket 01), so the interim behavior is not relied upon.
+// returning the guest's exit status. The stream mode follows what stdin
+// actually is: a terminal gets --tty (interactive session with echo and
+// line editing), anything else gets --stream for byte-faithful piping —
+// msb 0.7.3 rejects --stream on terminal stdin and keeps the two modes
+// exclusive. Signals are delivered to the msb subprocess's process group;
+// whether msb forwards them into the guest is UNVERIFIED (ticket 01), so
+// the interim behavior is not relied upon.
 func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	args := []string{"exec", name}
 	if workdir != "" {
 		args = append(args, "--workdir", workdir)
 	}
-	args = append(args, "--stream", "--")
+	if stdinIsTerminal(stdin) {
+		args = append(args, "--tty")
+	} else {
+		args = append(args, "--stream")
+	}
+	args = append(args, "--")
 	args = append(args, argv...)
 
 	cmd := exec.CommandContext(ctx, c.binary(), args...)
@@ -284,6 +293,17 @@ func (c CLI) PullIfMissing(ctx context.Context, image string) error {
 		return nil
 	}
 	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; `sbx build` will automate this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
+}
+
+// stdinIsTerminal reports whether the reader is an interactive terminal.
+// Anything that is not an *os.File — buffers in tests, pipes from callers
+// that never hand over a file — counts as a pipe.
+func stdinIsTerminal(stdin io.Reader) bool {
+	f, ok := stdin.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // FormatCPUs renders a CPU count without a trailing ".0" for whole numbers.
