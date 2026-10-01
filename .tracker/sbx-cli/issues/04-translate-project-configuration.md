@@ -108,3 +108,13 @@ label field at all (only name, image, status, and created_at), while
 (or `config` when stopped). Ownership and attribution checks in later tickets must use
 `msb inspect`, not the listing; the spec's backend verification records
 the schema difference.
+
+## Comments (addendum 5)
+
+Manual verification on msb 0.7.5 resolved the last ticket-04 secret
+question: with a `--secret-conf` map, the guest environment variable is
+named after the map key (`DEMO_TOKEN`), and its value is the placeholder
+`$MSB_DEMO_TOKEN`, which msb substitutes on requests to the secret's
+allowed destinations. The spec's backend verification records the
+observation and the unverified list now holds only the `:noexec` tmpfs
+spelling and `:ro` on `--mount-dir`.
