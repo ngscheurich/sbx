@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -62,14 +61,14 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 	if len(create) < 2 {
 		t.Fatalf("create call truncated: %q", create)
 	}
-	name = create[1]
+	name = create[2]
 	if !regexp.MustCompile(`^[a-z0-9-]+-run-[0-9a-f]{6}$`).MatchString(name) {
 		t.Errorf("create name %q is not a unique disposable-run name", name)
 	}
-	want := []string{"create", name, "alpine:3.20",
+	want := []string{"create", "--name", name, "alpine:3.20",
 		"--cpus", "2",
 		"--memory", "2G",
-		"--mount", worktreeOf(t, fake) + ":/workspace",
+		"--mount-dir", worktreeOf(t, fake) + ":/workspace",
 		"--label", "sbx.managed=1",
 		"--label", "sbx.mode=disposable",
 		"--label", "sbx.worktree=" + worktreeOf(t, fake),
@@ -79,10 +78,10 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 	if !equal(create, want) {
 		t.Errorf("create argv mismatch:\n got: %q\nwant: %q", create, want)
 	}
-	if got := calls[3].Args; !equal(got, []string{"exec", name, "--workdir", "/workspace", "--", "echo", "hello"}) {
+	if got := calls[3].Args; !equal(got, []string{"exec", name, "--workdir", "/workspace", "--stream", "--", "echo", "hello"}) {
 		t.Errorf("exec argv mismatch: %q", got)
 	}
-	if got := calls[4].Args; !equal(got, []string{"rm", name}) {
+	if got := calls[4].Args; !equal(got, []string{"remove", "--force", name}) {
 		t.Errorf("rm argv mismatch: %q", got)
 	}
 }
@@ -117,8 +116,8 @@ func TestRunRemovesSandboxOnSuccess(t *testing.T) {
 	if len(calls) != 5 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	createName := calls[2].Args[1]
-	if got := calls[4].Args; !equal(got, []string{"rm", createName}) {
+	createName := calls[2].Args[2]
+	if got := calls[4].Args; !equal(got, []string{"remove", "--force", createName}) {
 		t.Errorf("rm argv mismatch: %q, want rm of %q", got, createName)
 	}
 }
@@ -143,26 +142,13 @@ egress = "none"
 	if len(calls) != 5 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	if got := calls[3].Args; !equal(got, []string{"exec", calls[2].Args[1], "--workdir", "/workspace", "--", "/bin/bash"}) {
+	if got := calls[3].Args; !equal(got, []string{"exec", calls[2].Args[2], "--workdir", "/workspace", "--stream", "--", "/bin/bash"}) {
 		t.Errorf("shell-mode exec argv mismatch: %q", got)
 	}
 
-	// egress = "none" must reach create as a generated --net-conf policy
-	// with no allowed destinations.
-	var netConfPath string
-	for i, a := range calls[2].Args {
-		if a == "--net-conf" && i+1 < len(calls[2].Args) {
-			netConfPath = calls[2].Args[i+1]
-		}
-	}
-	if netConfPath == "" {
-		t.Fatalf("create argv lacks --net-conf with egress none: %q", calls[2].Args)
-	}
-	if !filepath.IsAbs(netConfPath) {
-		t.Errorf("net-conf path %q is not absolute", netConfPath)
-	}
-	if content := fake.NetConf(t); !strings.Contains(content, "allow: []") || strings.Contains(content, "example.com") {
-		t.Errorf("net-conf for egress none is not an empty allowlist: %q", content)
+	// egress = "none" must reach create as msb's --no-net.
+	if !contains(calls[2].Args, "--no-net") {
+		t.Errorf("create argv lacks --no-net with egress none: %q", calls[2].Args)
 	}
 }
 
@@ -203,7 +189,7 @@ func TestRunPropagatesGuestExitStatus(t *testing.T) {
 	if len(calls) != 5 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	if got := calls[4].Args; !equal(got, []string{"rm", calls[2].Args[1]}) {
+	if got := calls[4].Args; !equal(got, []string{"remove", "--force", calls[2].Args[2]}) {
 		t.Errorf("sandbox was not removed after guest failure: %q", got)
 	}
 }
@@ -225,7 +211,7 @@ func TestRunCreateFailureDoesNotRemoveAnything(t *testing.T) {
 		t.Errorf("stderr does not mention the creation failure: %s", stderr.String())
 	}
 	for _, call := range fake.Calls() {
-		if call.Args[0] == "rm" {
+		if call.Args[0] == "remove" {
 			t.Errorf("rm was called after a creation failure: %v", call.Args)
 		}
 	}
@@ -248,7 +234,7 @@ func TestRunCleansUpWhenExecFailsToStart(t *testing.T) {
 	if len(calls) != 5 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	if got := calls[4].Args; !equal(got, []string{"rm", calls[2].Args[1]}) {
+	if got := calls[4].Args; !equal(got, []string{"remove", "--force", calls[2].Args[2]}) {
 		t.Errorf("sandbox was not removed after exec failure: %q", got)
 	}
 }
@@ -280,7 +266,7 @@ func TestRunCleansUpOnCancellation(t *testing.T) {
 	if len(calls) != 5 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	if got := calls[4].Args; !equal(got, []string{"rm", calls[2].Args[1]}) {
+	if got := calls[4].Args; !equal(got, []string{"remove", "--force", calls[2].Args[2]}) {
 		t.Errorf("sandbox was not removed after cancellation: %q", got)
 	}
 }
@@ -404,7 +390,7 @@ func TestRunUniqueNames(t *testing.T) {
 		var creates []string
 		for _, c := range calls {
 			if c.Args[0] == "create" {
-				creates = append(creates, c.Args[1])
+				creates = append(creates, c.Args[2])
 			}
 		}
 		if len(creates) == 0 {
@@ -439,4 +425,14 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// contains reports whether the argument list includes the exact token.
+func contains(args []string, token string) bool {
+	for _, a := range args {
+		if a == token {
+			return true
+		}
+	}
+	return false
 }

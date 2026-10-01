@@ -25,7 +25,7 @@ import (
 //	FAKE_MSB_EXEC_SLEEP       seconds "exec" sleeps before answering (interruptible via SIGTERM)
 //	FAKE_MSB_EXEC_FAIL_START  set to make "exec" exit 127 without running the guest
 //	FAKE_MSB_EXIT             exit status of "exec" (default 0)
-//	FAKE_MSB_RM_FAIL          set to make "rm" fail
+//	FAKE_MSB_RM_FAIL          set to make "remove" fail
 const fakeMsbSh = `#!/bin/sh
 dir="${FAKE_MSB_LOG:?}"
 n=0
@@ -59,16 +59,17 @@ image)
   ;;
 create)
   prev=""
+  name=""
   for a in "$@"; do
-    if [ "$prev" = "--net-conf" ]; then
-      cp "$a" "$dir/netconf" 2>/dev/null
+    if [ "$prev" = "--name" ]; then
+      name="$a"
     fi
     prev="$a"
   done
   if [ -n "$FAKE_MSB_CREATE_FAIL" ]; then
-    case "$2" in
+    case "$name" in
     *$FAKE_MSB_CREATE_FAIL*)
-      echo "sbx-fake-msb: create failed for $2" >&2
+      echo "sbx-fake-msb: create failed for $name" >&2
       exit 1
       ;;
     esac
@@ -88,9 +89,9 @@ exec)
   printf 'guest-stderr\n' >&2
   exit "${FAKE_MSB_EXIT:-0}"
   ;;
-rm)
+remove)
   if [ -n "$FAKE_MSB_RM_FAIL" ]; then
-    echo "sbx-fake-msb: rm failed" >&2
+    echo "sbx-fake-msb: remove failed" >&2
     exit 1
   fi
   ;;
@@ -186,17 +187,6 @@ func (l Log) Stdin(t *testing.T) string {
 	data, err := os.ReadFile(filepath.Join(l.dir, "stdin"))
 	if err != nil {
 		t.Fatalf("reading fake msb stdin capture: %v", err)
-	}
-	return string(data)
-}
-
-// NetConf returns the network policy file the fake's create call copied from
-// the most recent --net-conf argument, or "" when none was passed.
-func (l Log) NetConf(t *testing.T) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(l.dir, "netconf"))
-	if err != nil {
-		return ""
 	}
 	return string(data)
 }

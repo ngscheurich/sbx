@@ -29,7 +29,7 @@ func TestCreateExactArgv(t *testing.T) {
 			{Key: "sbx.managed", Value: "1"},
 			{Key: "sbx.mode", Value: "disposable"},
 		},
-		NetConf: "/tmp/sbx-net.yaml",
+		NoNet: true,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -40,14 +40,14 @@ func TestCreateExactArgv(t *testing.T) {
 		t.Fatalf("fake msb saw %d calls, want 1", len(calls))
 	}
 	want := []string{
-		"create", "app-main-12345678-run-abc123", "alpine:3.20",
+		"create", "--name", "app-main-12345678-run-abc123", "alpine:3.20",
 		"--cpus", "2",
 		"--memory", "2G",
-		"--mount", "/repo/wt:/workspace",
-		"--mount", "/repo/ro:/mnt/ro:ro",
+		"--mount-dir", "/repo/wt:/workspace",
+		"--mount-dir", "/repo/ro:/mnt/ro:ro",
 		"--label", "sbx.managed=1",
 		"--label", "sbx.mode=disposable",
-		"--net-conf", "/tmp/sbx-net.yaml",
+		"--no-net",
 	}
 	if got := calls[0].Args; !equal(got, want) {
 		t.Errorf("create argv mismatch:\n got: %q\nwant: %q", got, want)
@@ -71,12 +71,12 @@ func TestCreateWithoutNetConfAndFractionalCPUs(t *testing.T) {
 	}
 
 	got := fake.Calls()[0].Args
-	for _, banned := range []string{"--net-conf", "--mount", "--label"} {
+	for _, banned := range []string{"--no-net", "--mount-dir", "--label"} {
 		if contains(got, banned) {
 			t.Errorf("create argv contains %q with no mounts, labels, or policy: %q", banned, got)
 		}
 	}
-	if !equal(got, []string{"create", "box", "alpine:3.20", "--cpus", "1.5", "--memory", "512M"}) {
+	if !equal(got, []string{"create", "--name", "box", "alpine:3.20", "--cpus", "1.5", "--memory", "512M"}) {
 		t.Errorf("create argv mismatch: %q", got)
 	}
 }
@@ -127,7 +127,7 @@ func TestExecArgvAndStreams(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("fake msb saw %d calls, want 1", len(calls))
 	}
-	want := []string{"exec", "box-run-abc", "--workdir", "/workspace", "--", "go", "version"}
+	want := []string{"exec", "box-run-abc", "--workdir", "/workspace", "--stream", "--", "go", "version"}
 	if got := calls[0].Args; !equal(got, want) {
 		t.Errorf("exec argv mismatch:\n got: %q\nwant: %q", got, want)
 	}
@@ -262,16 +262,17 @@ func TestPullFailureHintsAtImport(t *testing.T) {
 	}
 }
 
-// TestRemoveExactArgv pins `msb rm <name>`.
+// TestRemoveExactArgv pins `msb remove --force <name>`: the sandbox is
+// likely still running after exec, so removal stops it first.
 func TestRemoveExactArgv(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	box := CLI{}
 	if err := box.Remove(context.Background(), "box-run-abc"); err != nil {
-		t.Fatalf("rm: %v", err)
+		t.Fatalf("remove: %v", err)
 	}
-	want := []string{"rm", "box-run-abc"}
+	want := []string{"remove", "--force", "box-run-abc"}
 	if got := fake.Calls()[0].Args; !equal(got, want) {
-		t.Errorf("rm argv mismatch: %q", got)
+		t.Errorf("remove argv mismatch: %q", got)
 	}
 }
 

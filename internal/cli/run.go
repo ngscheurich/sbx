@@ -66,14 +66,6 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	}
 
 	name := disposableName(info)
-	netConf := ""
-	if cfg.Network.Egress == "none" {
-		netConf, err = msb.WriteNetConfNone()
-		if err != nil {
-			return fatal(err)
-		}
-		defer os.Remove(netConf)
-	}
 	create := msb.CreateOptions{
 		Name:   name,
 		Image:  cfg.Image,
@@ -85,7 +77,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 			{Key: "sbx.mode", Value: "disposable"},
 			{Key: "sbx.worktree", Value: info.WorktreeRoot},
 		},
-		NetConf: netConf,
+		NoNet: cfg.Network.Egress == "none",
 	}
 	if err := box.Create(ctx, create); err != nil {
 		// A creation failure removes nothing: sbx does not own a sandbox

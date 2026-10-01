@@ -148,13 +148,13 @@ type Label struct {
 	Value string
 }
 
-// Mount is one bind mount passed as --mount source:target[:ro].
+// Mount is one host bind passed as --mount-dir SOURCE:DEST[:OPTIONS].
 type Mount struct {
 	// Source is an absolute host path.
 	Source string
 	// Target is an absolute guest path.
 	Target string
-	// ReadOnly adds the :ro suffix.
+	// ReadOnly adds the :ro suffix (option spelling unverified).
 	ReadOnly bool
 }
 
@@ -172,35 +172,35 @@ type CreateOptions struct {
 	Mounts []Mount
 	// Labels are applied in order.
 	Labels []Label
-	// NetConf is the path of a generated network policy file, or "" when
-	// the default policy suffices.
-	NetConf string
+	// NoNet disables all network access (egress "none" in sbx terms).
+	NoNet bool
 }
 
 // Create runs `msb create`. Argument order is fixed and pinned by tests.
-// Real msb 0.7.3 takes the image as a positional argument after the sandbox
-// name (`msb create [OPTIONS] [IMAGE]`); the remaining flag spellings are
-// verified only where the real host has confirmed them. The image's
-// ENTRYPOINT and CMD play no part here: msb boots the VM without running
-// the image's default command, and sbx never consults either (ADR-0007).
+// Flag spellings come from real msb 0.7.3: `msb create [OPTIONS] [IMAGE]`
+// with `--name`, `-c/--cpus`, `-m/--memory`, `--mount-dir SOURCE:DEST`,
+// repeatable `--label KEY=VALUE`, and `--no-net` for no network access.
+// The image's ENTRYPOINT and CMD play no part here: msb boots the VM
+// without running the image's default command, and sbx never consults
+// either (ADR-0007).
 func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 	args := []string{
-		"create", o.Name, o.Image,
+		"create", "--name", o.Name, o.Image,
 		"--cpus", FormatCPUs(o.CPUs),
 		"--memory", o.Memory,
 	}
 	for _, m := range o.Mounts {
 		spec := m.Source + ":" + m.Target
 		if m.ReadOnly {
-			spec += ":ro"
+			spec += ":ro" // UNVERIFIED read-only option spelling
 		}
-		args = append(args, "--mount", spec)
+		args = append(args, "--mount-dir", spec)
 	}
 	for _, l := range o.Labels {
 		args = append(args, "--label", l.Key+"="+l.Value)
 	}
-	if o.NetConf != "" {
-		args = append(args, "--net-conf", o.NetConf)
+	if o.NoNet {
+		args = append(args, "--no-net")
 	}
 	if _, err := c.run(ctx, args...); err != nil {
 		return fmt.Errorf("creating sandbox %s: %w", o.Name, err)
@@ -209,15 +209,17 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 }
 
 // Exec runs argv in the named sandbox, forwarding the standard streams and
-// returning the guest's exit status. Signals are delivered to the msb
-// subprocess's process group; whether msb forwards them into the guest is
-// UNVERIFIED (ticket 01), so the interim behavior is not relied upon.
+// returning the guest's exit status. --stream gives byte-faithful piping
+// without a PTY (msb 0.7.3), matching sbx's forwarding semantics; a PTY
+// would reintroduce echo and CRLF translation. Signals are delivered to the
+// msb subprocess's process group; whether msb forwards them into the guest
+// is UNVERIFIED (ticket 01), so the interim behavior is not relied upon.
 func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	args := []string{"exec", name}
 	if workdir != "" {
-		args = append(args, "--workdir", workdir) // UNVERIFIED flag spelling on a real host
+		args = append(args, "--workdir", workdir)
 	}
-	args = append(args, "--")
+	args = append(args, "--stream", "--")
 	args = append(args, argv...)
 
 	cmd := exec.CommandContext(ctx, c.binary(), args...)
@@ -254,9 +256,10 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 	return -1, fmt.Errorf("msb exec: %w", waitErr)
 }
 
-// Remove runs `msb rm <name>`.
+// Remove runs `msb remove --force <name>`: the sandbox is likely still
+// running after exec, and --force stops it before removal.
 func (c CLI) Remove(ctx context.Context, name string) error {
-	if _, err := c.run(ctx, "rm", name); err != nil {
+	if _, err := c.run(ctx, "remove", "--force", name); err != nil {
 		return fmt.Errorf("removing sandbox %s: %w", name, err)
 	}
 	return nil
@@ -278,29 +281,6 @@ func (c CLI) PullIfMissing(ctx context.Context, image string) error {
 		return nil
 	}
 	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; `sbx build` will automate this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
-}
-
-// WriteNetConfNone writes the network policy file passed to --net-conf when
-// egress is "none": no allowed destinations and no nameservers. The file is
-// created outside the repository, and the caller removes it when done. The
-// exact msb schema is UNVERIFIED on a real host; sbx's side of the contract
-// is pinned by tests.
-func WriteNetConfNone() (path string, err error) {
-	content := "# generated by sbx: egress = none\nallow: []\nnameservers: []\n"
-	f, err := os.CreateTemp("", "sbx-net-conf-*.yaml")
-	if err != nil {
-		return "", fmt.Errorf("writing the network policy: %w", err)
-	}
-	if _, err := f.WriteString(content); err != nil {
-		f.Close()
-		os.Remove(f.Name())
-		return "", fmt.Errorf("writing the network policy: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
-		return "", fmt.Errorf("writing the network policy: %w", err)
-	}
-	return f.Name(), nil
 }
 
 // FormatCPUs renders a CPU count without a trailing ".0" for whole numbers.
