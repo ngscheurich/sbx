@@ -156,6 +156,41 @@ func TestExecUsesTtyOnTerminalStdin(t *testing.T) {
 	}
 }
 
+// TestExecTtyCancellation checks that canceling a --tty exec terminates the
+// child (signaled directly, since it shares sbx's foreground group) and
+// still returns the trap exit status.
+func TestExecTtyCancellation(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	t.Setenv("FAKE_MSB_EXEC_SLEEP", "30")
+	t.Setenv("FAKE_MSB_EXEC_NO_STDIN_READ", "1") // a PTY master never EOFs
+	ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Skipf("no pty available: %v", err)
+	}
+	t.Cleanup(func() { ptmx.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	box := CLI{}
+	type result struct {
+		code int
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		code, err := box.Exec(ctx, "box", "", []string{"sleep", "30"}, ptmx, nil, nil)
+		done <- result{code, err}
+	}()
+	fake.Wait(t, 1)
+	cancel()
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("exec: %v", res.err)
+	}
+	if res.code != 143 {
+		t.Errorf("exit code = %d, want 143 from the interrupted guest", res.code)
+	}
+}
+
 // TestExecWithoutWorkdir omits the --workdir flag when no working directory
 // is requested.
 func TestExecWithoutWorkdir(t *testing.T) {

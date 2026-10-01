@@ -226,7 +226,8 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 	if workdir != "" {
 		args = append(args, "--workdir", workdir)
 	}
-	if stdinIsTerminal(stdin) {
+	tty := stdinIsTerminal(stdin)
+	if tty {
 		args = append(args, "--tty")
 	} else {
 		args = append(args, "--stream")
@@ -237,16 +238,29 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 	cmd := exec.CommandContext(ctx, c.binary(), args...)
 	cmd.Env = localEnv()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-	// Put msb in its own process group so a cancellation reaches the
-	// subprocess and its children without signaling sbx itself.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		}
-		return nil
-	}
 	cmd.WaitDelay = execWaitDelay
+	if tty {
+		// Keep msb in sbx's foreground process group: as a background
+		// group relative to the terminal, its tty setup would be stopped
+		// by SIGTTOU and the session would hang. In the foreground group,
+		// terminal signals such as Ctrl-C reach msb directly.
+		cmd.Cancel = func() error {
+			if cmd.Process != nil {
+				_ = cmd.Process.Signal(syscall.SIGTERM)
+			}
+			return nil
+		}
+	} else {
+		// Put msb in its own process group so a cancellation reaches the
+		// subprocess and its children without signaling sbx itself.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error {
+			if cmd.Process != nil {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+			}
+			return nil
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		return -1, fmt.Errorf("starting msb exec: %w", err)

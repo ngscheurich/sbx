@@ -78,7 +78,10 @@ create)
 exec)
   if [ -n "$FAKE_MSB_EXEC_SLEEP" ]; then
     trap 'exit 143' TERM
-    sleep "$FAKE_MSB_EXEC_SLEEP"
+    # Run the sleep in the background and wait on it so the TERM trap
+    # fires immediately, however the signal arrives.
+    sleep "$FAKE_MSB_EXEC_SLEEP" &
+    wait "$!"
   fi
   if [ -n "$FAKE_MSB_EXEC_FAIL_START" ]; then
     echo "sbx-fake-msb: cannot start the guest" >&2
