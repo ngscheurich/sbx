@@ -97,9 +97,10 @@ func (c CLI) LocalContext(ctx context.Context) (Context, error) {
 }
 
 // parseContext extracts the effective backend from `msb context --format
-// json` output. msb 0.7.3's exact schema is not fully documented; the parser
-// accepts a "backend" field at the top level or one level down, matching the
-// key case-insensitively, and reports the raw output when it finds nothing.
+// json` output. Real msb 0.7.3 reports `{"kind": "local", "source":
+// "MSB_BACKEND"}`; the parser accepts that schema and, tolerantly, a
+// "backend" field at the top level or one level down, case-insensitively.
+// It reports the raw output when it finds nothing.
 func parseContext(out string) (Context, error) {
 	trimmed := strings.TrimSpace(out)
 	var doc map[string]any
@@ -119,19 +120,22 @@ func parseContext(out string) (Context, error) {
 	return Context{}, fmt.Errorf("no backend field found in %q", trimmed)
 }
 
-// backendValue reads a string "backend" field from one JSON object,
-// matching the key case-insensitively and ignoring a null value.
+// backendValue reads the backend from one JSON object: msb's "kind" key,
+// or a "backend" key, matched case-insensitively. A null or non-string
+// value yields nothing.
 func backendValue(doc map[string]any) (string, bool) {
-	for key, value := range doc {
-		if !strings.EqualFold(key, "backend") {
-			continue
-		}
-		switch v := value.(type) {
-		case string:
-			return v, true
-		case map[string]any:
-			if inner, ok := v["type"].(string); ok {
-				return inner, true
+	for _, want := range []string{"kind", "backend"} {
+		for key, value := range doc {
+			if !strings.EqualFold(key, want) {
+				continue
+			}
+			switch v := value.(type) {
+			case string:
+				return v, true
+			case map[string]any:
+				if inner, ok := v["type"].(string); ok {
+					return inner, true
+				}
 			}
 		}
 	}

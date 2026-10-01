@@ -261,11 +261,14 @@ func TestParseContextShapes(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
+		{"msb 0.7.3 real output", "{\n  \"kind\": \"local\",\n  \"source\": \"MSB_BACKEND\"\n}", "local", false},
+		{"msb 0.7.3 cloud", `{"kind":"cloud","source":"profile"}`, "cloud", false},
 		{"top level", `{"backend":"local"}`, "local", false},
 		{"nested", `{"name":"default","context":{"backend":"local"}}`, "local", false},
 		{"case insensitive", `{"Backend":"local"}`, "local", false},
 		{"backend object", `{"backend":{"type":"local","name":"d"}}`, "local", false},
 		{"cloud refused", `{"backend":"cloud"}`, "cloud", false},
+		{"backend-like key but not the backend", `{"kind_name":"default"}`, "", true},
 		{"no backend field", `{"name":"default","url":"http://localhost:8338"}`, "", true},
 		{"not json", `local`, "", true},
 	}
