@@ -43,7 +43,20 @@ Implemented on `main`.
   propagation against it.
 - **Unverified on a real host (pending ticket 01):** signal forwarding into
   the guest (sbx currently SIGTERMs the msb subprocess's process group and
-  exits with 128+sig), the `--workdir` flag spelling on `msb exec`, the
-  `--mount source:target[:ro]` and `--net-conf` flag spellings, the generated
-  net-conf file schema, and whether `msb create`/`msb image pull` accept these
-  forms as written. All are marked UNVERIFIED in code comments.
+  exits with 128+sig), the `:ro` mount option spelling, and whether `msb
+  remove --force` succeeds while the sandbox runs.
+
+## Comments (addendum)
+
+Real-host debugging with msb 0.7.3 corrected the initial translation, which
+had guessed several flag spellings. Confirmed from `msb create/exec/remove
+--help` and recorded in the spec's backend verification: image is a
+positional create argument with `--name`, resources are `--cpus`/`--memory`,
+the Workspace bind is `--mount-dir SOURCE:DEST`, labels are repeatable
+`--label KEY=VALUE`, egress `none` is native `--no-net` (the generated
+`--net-conf` file idea is dropped for public/none; allowlist via `--net-rule`
+belongs to ticket 04), exec uses `--workdir` plus `--stream` for byte-faithful
+forwarding, and removal is `msb remove --force <name>`. `msb context --format
+json` reports the backend under `kind`. `--pull` defaults to `if-missing`, so
+sbx's explicit inspect-then-pull step is a belt-and-suspenders error reporter,
+not the only pull path.
