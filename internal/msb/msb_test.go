@@ -251,6 +251,50 @@ func TestRemoveExactArgv(t *testing.T) {
 	}
 }
 
+// TestParseContextShapes covers the plausible `msb context --format json`
+// shapes: top-level backend, one level down, case differences, a backend
+// object with a type field, and output with no backend field at all.
+func TestParseContextShapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		out     string
+		want    string
+		wantErr bool
+	}{
+		{"top level", `{"backend":"local"}`, "local", false},
+		{"nested", `{"name":"default","context":{"backend":"local"}}`, "local", false},
+		{"case insensitive", `{"Backend":"local"}`, "local", false},
+		{"backend object", `{"backend":{"type":"local","name":"d"}}`, "local", false},
+		{"cloud refused", `{"backend":"cloud"}`, "cloud", false},
+		{"no backend field", `{"name":"default","url":"http://localhost:8338"}`, "", true},
+		{"not json", `local`, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cx, err := parseContext(tc.out)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseContext(%s) succeeded: %+v", tc.out, cx)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseContext(%s): %v", tc.out, err)
+			}
+			if cx.Backend != tc.want {
+				t.Errorf("backend = %q, want %q", cx.Backend, tc.want)
+			}
+		})
+	}
+
+	// A missing field must surface the raw output so a real-host schema
+	// mismatch is self-diagnosing.
+	_, err := parseContext(`{"name":"default"}`)
+	if err == nil || !strings.Contains(err.Error(), "no backend field found") {
+		t.Errorf("error does not include the raw output: %v", err)
+	}
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

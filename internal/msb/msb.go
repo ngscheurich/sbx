@@ -86,14 +86,56 @@ func (c CLI) LocalContext(ctx context.Context) (Context, error) {
 	if err != nil {
 		return Context{}, fmt.Errorf("confirming the msb backend: %w", err)
 	}
-	var cx Context
-	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &cx); err != nil {
-		return Context{}, fmt.Errorf("parsing msb context output %q: %w", strings.TrimSpace(out), err)
+	cx, err := parseContext(out)
+	if err != nil {
+		return Context{}, fmt.Errorf("parsing msb context output: %w", err)
 	}
 	if cx.Backend != "local" {
 		return Context{}, fmt.Errorf("msb selected the %q backend; sbx requires a local microsandbox installation and never falls back to another backend", cx.Backend)
 	}
 	return cx, nil
+}
+
+// parseContext extracts the effective backend from `msb context --format
+// json` output. msb 0.7.3's exact schema is not fully documented; the parser
+// accepts a "backend" field at the top level or one level down, matching the
+// key case-insensitively, and reports the raw output when it finds nothing.
+func parseContext(out string) (Context, error) {
+	trimmed := strings.TrimSpace(out)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &doc); err != nil {
+		return Context{}, fmt.Errorf("%q is not JSON: %w", trimmed, err)
+	}
+	if v, ok := backendValue(doc); ok {
+		return Context{Backend: v}, nil
+	}
+	for _, v := range doc {
+		if nested, ok := v.(map[string]any); ok {
+			if bv, ok := backendValue(nested); ok {
+				return Context{Backend: bv}, nil
+			}
+		}
+	}
+	return Context{}, fmt.Errorf("no backend field found in %q", trimmed)
+}
+
+// backendValue reads a string "backend" field from one JSON object,
+// matching the key case-insensitively and ignoring a null value.
+func backendValue(doc map[string]any) (string, bool) {
+	for key, value := range doc {
+		if !strings.EqualFold(key, "backend") {
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			return v, true
+		case map[string]any:
+			if inner, ok := v["type"].(string); ok {
+				return inner, true
+			}
+		}
+	}
+	return "", false
 }
 
 // Label is one sandbox label passed as --label key=value.
