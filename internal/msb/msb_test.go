@@ -82,6 +82,54 @@ func TestCreateWithoutNetConfAndFractionalCPUs(t *testing.T) {
 	}
 }
 
+// TestRunExactArgv pins msb run, the native one-shot: create-time settings,
+// an empty --entrypoint to neutralize the image entrypoint (ADR-0007), the
+// stream mode, and the guest command after --.
+func TestRunExactArgv(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	box := CLI{}
+
+	var stdout, stderr bytes.Buffer
+	code, err := box.Run(context.Background(), RunOptions{
+		CreateOptions: CreateOptions{
+			Name:   "app-main-12345678-run-abc123",
+			Image:  "alpine:3.20",
+			CPUs:   2,
+			Memory: "2G",
+			Mounts: []Mount{{Source: "/repo/wt", Target: "/workspace"}},
+			Labels: []Label{{Key: "sbx.managed", Value: "1"}},
+			NoNet:  true,
+		},
+		Workdir: "/workspace",
+		Argv:    []string{"echo", "hi"},
+	}, strings.NewReader("payload\n"), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	want := []string{
+		"run", "--name", "app-main-12345678-run-abc123", "alpine:3.20",
+		"--cpus", "2",
+		"--memory", "2G",
+		"--mount-dir", "/repo/wt:/workspace",
+		"--label", "sbx.managed=1",
+		"--no-net",
+		"--workdir", "/workspace",
+		"--entrypoint", "",
+		"--no-tty",
+		"--", "echo", "hi",
+	}
+	calls := fake.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("fake msb saw %d calls, want 1", len(calls))
+	}
+	if got := calls[0].Args; !equal(got, want) {
+		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 // TestCreateFailureSurfacesMessage checks that a failing create reports the
 // backend's own message, not a swallowed error.
 func TestCreateFailureSurfacesMessage(t *testing.T) {

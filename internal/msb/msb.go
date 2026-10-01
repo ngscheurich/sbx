@@ -189,8 +189,18 @@ type CreateOptions struct {
 // without running the image's default command, and sbx never consults
 // either (ADR-0007).
 func (c CLI) Create(ctx context.Context, o CreateOptions) error {
+	args := append([]string{"create"}, createArgs(o)...)
+	if _, err := c.run(ctx, args...); err != nil {
+		return fmt.Errorf("creating sandbox %s: %w", o.Name, err)
+	}
+	return nil
+}
+
+// createArgs renders the shared `msb create`-style argument prefix: name,
+// positional image, resources, mounts, labels, and network restriction.
+func createArgs(o CreateOptions) []string {
 	args := []string{
-		"create", "--name", o.Name, o.Image,
+		"--name", o.Name, o.Image,
 		"--cpus", FormatCPUs(o.CPUs),
 		"--memory", o.Memory,
 	}
@@ -207,10 +217,41 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 	if o.NoNet {
 		args = append(args, "--no-net")
 	}
-	if _, err := c.run(ctx, args...); err != nil {
-		return fmt.Errorf("creating sandbox %s: %w", o.Name, err)
+	return args
+}
+
+// RunOptions carries everything `msb run` receives for one disposable run:
+// the create-time settings plus the guest command.
+type RunOptions struct {
+	// CreateOptions carries the sandbox's creation settings.
+	CreateOptions
+	// Workdir is the guest working directory for the command.
+	Workdir string
+	// Argv is the guest command, run directly (ADR-0007).
+	Argv []string
+}
+
+// Run is msb's native one-shot: it creates the sandbox and runs the command
+// in a single subprocess. sbx still owns cleanup and removes the sandbox
+// itself afterwards, because `msb run --help` documents no removal-on-exit.
+// ADR-0007: msb run preserves the image's effective entrypoint when a
+// command is given, so sbx always passes an empty --entrypoint to neutralize
+// it (UNVERIFIED on a real host) and keep `sbx run -- x` equivalent to `sbx
+// exec -- x`.
+func (c CLI) Run(ctx context.Context, o RunOptions, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	args := append([]string{"run"}, createArgs(o.CreateOptions)...)
+	if o.Workdir != "" {
+		args = append(args, "--workdir", o.Workdir)
 	}
-	return nil
+	args = append(args, "--entrypoint", "")
+	if stdinIsTerminal(stdin) {
+		args = append(args, "--tty")
+	} else {
+		args = append(args, "--no-tty")
+	}
+	args = append(args, "--")
+	args = append(args, o.Argv...)
+	return c.runChild(ctx, args, stdin, stdout, stderr)
 }
 
 // Exec runs argv in the named sandbox, forwarding the standard streams and
@@ -226,14 +267,26 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 	if workdir != "" {
 		args = append(args, "--workdir", workdir)
 	}
-	tty := stdinIsTerminal(stdin)
-	if tty {
+	if stdinIsTerminal(stdin) {
 		args = append(args, "--tty")
 	} else {
 		args = append(args, "--stream")
 	}
 	args = append(args, "--")
 	args = append(args, argv...)
+	return c.runChild(ctx, args, stdin, stdout, stderr)
+
+}
+
+// runChild runs one msb subprocess attached to the given standard streams
+// and returns the guest's exit status. The stream-mode-dependent process
+// setup lives here: with terminal stdin the child stays in sbx's foreground
+// process group (a background group's tty setup is stopped by SIGTTOU, and
+// terminal signals reach msb directly); with piped stdin it gets its own
+// group so cancellation reaches the subprocess and its children. Whether
+// msb forwards signals into the guest is UNVERIFIED (ticket 01).
+func (c CLI) runChild(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	tty := stdinIsTerminal(stdin)
 
 	cmd := exec.CommandContext(ctx, c.binary(), args...)
 	cmd.Env = localEnv()
@@ -263,7 +316,7 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 	}
 
 	if err := cmd.Start(); err != nil {
-		return -1, fmt.Errorf("starting msb exec: %w", err)
+		return -1, fmt.Errorf("starting msb %s: %w", args[0], err)
 	}
 	waitErr := cmd.Wait()
 	if waitErr == nil {
@@ -277,9 +330,9 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 		return exitErr.ExitCode(), nil
 	}
 	if ctx.Err() != nil {
-		return -1, fmt.Errorf("msb exec was interrupted: %w", ctx.Err())
+		return -1, fmt.Errorf("msb %s was interrupted: %w", args[0], ctx.Err())
 	}
-	return -1, fmt.Errorf("msb exec: %w", waitErr)
+	return -1, fmt.Errorf("msb %s: %w", args[0], waitErr)
 }
 
 // Remove runs `msb remove --force <name>`: the sandbox is likely still

@@ -262,7 +262,7 @@ Creation-time settings are captured at creation, in a snapshot stored in the hos
 
 ### Disposable runs
 
-A disposable run creates a uniquely named sandbox with `msb create`, runs Bootstrap and then the command with `msb exec`, and removes the sandbox on completion, failure, or cancellation, including when Bootstrap fails. It has no incomplete state to repair, needs no lock, and publishes no ports.
+A disposable run is a single `msb run` subprocess: a uniquely named sandbox created with `--name`, owned and mode labels, the Workspace, the translated resources, and the network policy, running the command (or the configured shell) after `--`. sbx delegates the sandbox's whole lifecycle to `msb run` and adds no cleanup step of its own. sbx neutralizes the image's effective entrypoint with an empty `--entrypoint` so a command runs exactly as given (ADR-0007). It has no incomplete state to repair, needs no lock, and publishes no ports.
 
 ### Port reservations
 

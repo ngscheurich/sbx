@@ -75,7 +75,7 @@ create)
     esac
   fi
   ;;
-exec)
+exec|run)
   if [ -n "$FAKE_MSB_EXEC_SLEEP" ]; then
     trap 'exit 143' TERM
     # Run the sleep in the background and wait on it so the TERM trap

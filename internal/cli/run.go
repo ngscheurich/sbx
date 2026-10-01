@@ -79,29 +79,21 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		},
 		NoNet: cfg.Network.Egress == "none",
 	}
-	if err := box.Create(ctx, create); err != nil {
-		// A creation failure removes nothing: sbx does not own a sandbox
-		// it never created, even if one exists with the same name.
-		return fatal(err)
-	}
-
 	guestArgv := argv
 	if len(guestArgv) == 0 {
 		guestArgv = []string{cfg.Shell}
 	}
-	code, err := box.Exec(ctx, name, workspaceTarget, guestArgv, stdin, stdout, stderr)
+	code, err := box.Run(ctx, msb.RunOptions{
+		CreateOptions: create,
+		Workdir:       workspaceTarget,
+		Argv:          guestArgv,
+	}, stdin, stdout, stderr)
 
-	// Removal runs on success, failure, and cancellation alike, with a
-	// context that survives the cancellation above.
-	rmCtx := context.WithoutCancel(ctx)
-	if rerr := box.Remove(rmCtx, name); rerr != nil {
-		fmt.Fprintf(stderr, "sbx: %v\n", rerr)
-		if code == 0 {
-			code = exitFailure
-		}
-	}
+	// The sandbox's whole lifecycle — creation, the command, and whatever
+	// happens to the sandbox afterwards — is msb run's own behavior; sbx
+	// adds no cleanup step and propagates the guest's exit status.
 	if err != nil && code < 0 {
-		return fatal(fmt.Errorf("running %s in %s: %w", strings.Join(guestArgv, " "), name, err))
+		return fatal(fmt.Errorf("running %s: %w", strings.Join(guestArgv, " "), err))
 	}
 	return code
 }

@@ -46,6 +46,21 @@ Implemented on `main`.
   exits with 128+sig), the `:ro` mount option spelling, and whether `msb
   remove --force` succeeds while the sandbox runs.
 
+## Comments (addendum 2)
+
+Real-host testing led to a design change: `sbx run` now delegates the whole
+lifecycle to msb's native one-shot, `msb run` (single subprocess: create,
+command, lifecycle), instead of composing `msb create` + `msb exec` + `msb
+remove --force`. sbx passes `--name`, the owned/mode/worktree labels, the
+Workspace `--mount-dir`, resources, `--no-net` for egress none, `--workdir`,
+and an empty `--entrypoint` so the image entrypoint stays out of guest
+command selection (ADR-0007); the spec's Disposable-runs section was updated
+to match. Cleanup tests were removed with the cleanup step; fake-msb tests
+pin the single run call, exit-status and stream propagation, and
+interruption status. Still unverified: that `--entrypoint ""` actually
+clears the image entrypoint, and what `msb run` leaves behind when the
+guest fails or is interrupted.
+
 ## Comments (addendum)
 
 Real-host debugging with msb 0.7.3 corrected the initial translation, which
