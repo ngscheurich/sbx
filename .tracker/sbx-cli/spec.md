@@ -262,7 +262,7 @@ Creation-time settings are captured at creation, in a snapshot stored in the hos
 
 ### Disposable runs
 
-A disposable run is a single `msb run` subprocess: a uniquely named sandbox created with `--name`, owned and mode labels, the Workspace, the translated resources, and the network policy, running the command (or the configured shell) after `--`. sbx delegates the sandbox's whole lifecycle to `msb run` and adds no cleanup step of its own; the image's effective entrypoint applies, exactly as it does for `msb run`. It has no incomplete state to repair, needs no lock, and publishes no ports.
+A disposable run is a single `msb run` subprocess carrying the owned and mode labels, the Workspace, the translated resources, and the network policy, running the command (or the configured shell) after `--`. sbx passes no `--name`: msb removes an auto-named one-shot when its command completes but keeps an explicitly named sandbox, so naming and the whole lifecycle belong to `msb run`, and sbx adds no cleanup step of its own. The image's effective entrypoint applies, exactly as it does for `msb run`. Attribution for any sandbox that outlives its run comes from the `sbx.*` labels. It has no incomplete state to repair, needs no lock, and publishes no ports.
 
 ### Port reservations
 

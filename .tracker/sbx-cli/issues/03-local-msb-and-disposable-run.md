@@ -46,6 +46,15 @@ Implemented on `main`.
   exits with 128+sig), the `:ro` mount option spelling, and whether `msb
   remove --force` succeeds while the sandbox runs.
 
+## Comments (addendum 4)
+
+Real-host comparison showed msb run's lifecycle rule: it removes an
+auto-named one-shot when the command completes but keeps a sandbox that was
+named with `--name` (the sbx-named sandbox was left `stopped` in `msb ls`).
+sbx therefore passes no `--name` for disposable runs, leaving naming and
+lifecycle entirely to msb; the worktree/mode attribution lives in the
+`sbx.*` labels. The spec's Disposable-runs section records the semantics.
+
 ## Comments (addendum 3)
 
 `--entrypoint ""` failed on a real host (`invalid config: entrypoint

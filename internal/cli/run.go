@@ -5,8 +5,6 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -14,8 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/ngscheurich/sbx/internal/gitx"
-	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
 )
 
@@ -65,9 +61,10 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return fatal(err)
 	}
 
-	name := disposableName(info)
 	create := msb.CreateOptions{
-		Name:   name,
+		// No Name: msb run keeps a sandbox that is explicitly named, and
+		// removes an auto-named one-shot when the command completes. The
+		// sbx.* labels carry attribution instead.
 		Image:  cfg.Image,
 		CPUs:   cfg.CPUs,
 		Memory: cfg.Memory,
@@ -96,18 +93,4 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return fatal(fmt.Errorf("running %s: %w", strings.Join(guestArgv, " "), err))
 	}
 	return code
-}
-
-// disposableName derives a unique backend name for one disposable run: the
-// worktree's Sandbox identity plus a random suffix, so a run never collides
-// with the persistent sandbox or a concurrent run.
-func disposableName(info gitx.Info) string {
-	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
-	var suffix [3]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
-		// crypto/rand failure is effectively impossible; fall back to a
-		// still-valid name rather than failing the run.
-		suffix = [3]byte{0, 0, 1}
-	}
-	return id.Sandbox + "-run-" + hex.EncodeToString(suffix[:])
 }

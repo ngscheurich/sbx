@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -49,7 +48,6 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
 
-	var name string
 	// context, image inspect, run — in that order; the sandbox lifecycle
 	// is msb run's own behavior, so sbx makes no cleanup calls.
 	if got := calls[0].Args; !equal(got, []string{"context", "--format", "json"}) {
@@ -62,11 +60,7 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 	if len(runCall) < 2 {
 		t.Fatalf("run call truncated: %q", runCall)
 	}
-	name = runCall[2]
-	if !regexp.MustCompile(`^[a-z0-9-]+-run-[0-9a-f]{6}$`).MatchString(name) {
-		t.Errorf("run name %q is not a unique disposable-run name", name)
-	}
-	want := []string{"run", "--name", name, "alpine:3.20",
+	want := []string{"run", "alpine:3.20",
 		"--cpus", "2",
 		"--memory", "2G",
 		"--mount-dir", worktreeOf(t, fake) + ":/workspace",
@@ -135,7 +129,7 @@ egress = "none"
 	if len(calls) != 3 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	want := []string{"run", "--name", calls[2].Args[2], "alpine:3.20",
+	want := []string{"run", "alpine:3.20",
 		"--cpus", "1",
 		"--memory", "1G",
 		"--mount-dir", worktreeOf(t, fake) + ":/workspace",
@@ -344,11 +338,13 @@ allow = ["example.com"]
 	}
 }
 
-// TestRunUniqueNames checks that two disposable runs never share a name.
-func TestRunUniqueNames(t *testing.T) {
+// TestRunLeavesNamingToMsb checks that sbx passes no --name for disposable
+// runs: msb run removes an auto-named one-shot when the command completes,
+// and keeps one it did not name, so sbx must not name them.
+func TestRunLeavesNamingToMsb(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	worktree, _ := fixtureRepo(t, disposableTOML)
-	runOnce := func() string {
+	runOnce := func() {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
 		code := chdir(t, worktree, func() int {
@@ -357,23 +353,14 @@ func TestRunUniqueNames(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("run failed: %s", stderr.String())
 		}
-		calls := fake.Calls()
-		var creates []string
-		for _, c := range calls {
-			if c.Args[0] == "run" {
-				creates = append(creates, c.Args[2])
-			}
-		}
-		if len(creates) == 0 {
-			t.Fatal("no run call recorded")
-		}
-		return creates[len(creates)-1]
 	}
 
-	first := runOnce()
-	second := runOnce()
-	if first == second {
-		t.Errorf("two disposable runs shared the name %q", first)
+	runOnce()
+	runOnce()
+	for _, c := range fake.Calls() {
+		if c.Args[0] == "run" && contains(c.Args, "--name") {
+			t.Errorf("sbx named a disposable run; msb keeps named sandboxes: %v", c.Args)
+		}
 	}
 }
 

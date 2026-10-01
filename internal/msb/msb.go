@@ -194,14 +194,21 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 	return nil
 }
 
-// createArgs renders the shared `msb create`-style argument prefix: name,
-// positional image, resources, mounts, labels, and network restriction.
+// createArgs renders the shared `msb create`-style argument prefix: the
+// optional name, positional image, resources, mounts, labels, and network
+// restriction. An empty Name omits --name entirely: msb run treats an
+// explicitly named sandbox as one to keep, while an auto-generated one-shot
+// is removed when the command completes — so disposable runs pass no name
+// and let msb own both naming and lifecycle.
 func createArgs(o CreateOptions) []string {
-	args := []string{
-		"--name", o.Name, o.Image,
+	var args []string
+	if o.Name != "" {
+		args = append(args, "--name", o.Name)
+	}
+	args = append(args, o.Image,
 		"--cpus", FormatCPUs(o.CPUs),
 		"--memory", o.Memory,
-	}
+	)
 	for _, m := range o.Mounts {
 		spec := m.Source + ":" + m.Target
 		if m.ReadOnly {
@@ -232,8 +239,10 @@ type RunOptions struct {
 }
 
 // Run is msb's native one-shot: it creates the sandbox and runs the command
-// in a single subprocess. The sandbox's whole lifecycle is msb run's own
-// behavior; sbx adds no cleanup step.
+// in a single subprocess. sbx passes no --name, so msb treats the sandbox as
+// an ephemeral one-shot and removes it when the command completes; the
+// sandbox's whole lifecycle is msb run's own behavior, and sbx adds no
+// cleanup step.
 func (c CLI) Run(ctx context.Context, o RunOptions, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	args := append([]string{"run"}, createArgs(o.CreateOptions)...)
 	if o.Workdir != "" {
