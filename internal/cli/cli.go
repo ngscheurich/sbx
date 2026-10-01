@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -27,15 +28,18 @@ Usage:
 
 Commands:
   plan    Show what sbx would create for this worktree's persistent sandbox, changing nothing
+  run     Run a one-off guest command in a disposable sandbox, removed afterward
 
-The full v1 command set also includes build, up, exec, run, status, logs,
+The full v1 command set also includes build, up, exec, status, logs,
 stop, rm, and port prune; later releases implement them one by one.
 
 Run sbx from any directory inside a Git worktree that has an sbx.toml.
 `
 
-// Run dispatches one command line and returns the process exit code.
-func Run(args []string, stdout, stderr io.Writer) int {
+// Run dispatches one command line and returns the process exit code. The
+// context carries cancellation (sbx forwards it to the running guest) and
+// stdin is passed through to guest commands.
+func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stdout, helpText)
 		return exitOK
@@ -51,6 +55,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return exitUsage
 		}
 		return runPlan(stdout, stderr)
+	case "run":
+		return runDisposable(ctx, args, stdin, stdout, stderr)
 	case "-V", "--version", "version":
 		fmt.Fprintln(stdout, "sbx (development build)")
 		return exitOK
@@ -61,13 +67,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 }
 
 func runPlan(stdout, stderr io.Writer) int {
-	info, err := gitx.Discover(".")
-	if err != nil {
-		fmt.Fprintf(stderr, "sbx: %v\n", err)
-		return exitFailure
-	}
-	configPath := filepath.Join(info.WorktreeRoot, "sbx.toml")
-	cfg, err := config.Load(configPath)
+	info, cfg, err := discoverConfig()
 	if err != nil {
 		fmt.Fprintf(stderr, "sbx: %v\n", err)
 		return exitFailure
@@ -75,4 +75,18 @@ func runPlan(stdout, stderr io.Writer) int {
 	p := plan.Compose(info, cfg)
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
+}
+
+// discoverConfig finds the worktree root from the current directory and
+// loads that checkout's validated sbx.toml.
+func discoverConfig() (gitx.Info, config.Config, error) {
+	info, err := gitx.Discover(".")
+	if err != nil {
+		return gitx.Info{}, config.Config{}, err
+	}
+	cfg, err := config.Load(filepath.Join(info.WorktreeRoot, "sbx.toml"))
+	if err != nil {
+		return gitx.Info{}, config.Config{}, err
+	}
+	return info, cfg, nil
 }

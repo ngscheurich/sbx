@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ egress = "public"
 
 func TestHelpListsOnlyV1Commands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--help"}, &stdout, &stderr)
+	code := Run(context.Background(), []string{"--help"}, nil, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
@@ -67,7 +68,7 @@ func TestHelpListsOnlyV1Commands(t *testing.T) {
 
 func TestNoArgsShowsHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := Run(nil, &stdout, &stderr); code != 0 {
+	if code := Run(context.Background(), nil, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
 	if !strings.Contains(stdout.String(), "Usage") {
@@ -77,7 +78,7 @@ func TestNoArgsShowsHelp(t *testing.T) {
 
 func TestPlanRejectsUnexpectedArguments(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"plan", "--verbose"}, &stdout, &stderr); code == 0 {
+	if code := Run(context.Background(), []string{"plan", "--verbose"}, nil, &stdout, &stderr); code == 0 {
 		t.Fatal("plan accepted an unsupported flag")
 	}
 	if !strings.Contains(stderr.String(), "--verbose") {
@@ -87,7 +88,7 @@ func TestPlanRejectsUnexpectedArguments(t *testing.T) {
 
 func TestUnknownCommandFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"deploy"}, &stdout, &stderr); code == 0 {
+	if code := Run(context.Background(), []string{"deploy"}, nil, &stdout, &stderr); code == 0 {
 		t.Fatal("unknown command succeeded")
 	}
 	if !strings.Contains(stderr.String(), "deploy") {
@@ -104,7 +105,7 @@ func TestPlanFromNestedDirectory(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, nested, func() int {
-		return Run([]string{"plan"}, &stdout, &stderr)
+		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
@@ -129,7 +130,7 @@ func TestPlanChangesNothing(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, worktree, func() int {
-		return Run([]string{"plan"}, &stdout, &stderr)
+		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
@@ -149,7 +150,7 @@ func TestPlanChangesNothing(t *testing.T) {
 func TestPlanFailsOutsideWorktree(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, t.TempDir(), func() int {
-		return Run([]string{"plan"}, &stdout, &stderr)
+		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("plan succeeded outside a Git worktree")
@@ -170,7 +171,7 @@ func TestPlanFailsWithoutConfig(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, repo, func() int {
-		return Run([]string{"plan"}, &stdout, &stderr)
+		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("plan succeeded without sbx.toml")
@@ -192,7 +193,7 @@ egress = "bridged"
 
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, worktree, func() int {
-		return Run([]string{"plan"}, &stdout, &stderr)
+		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("plan succeeded with an invalid network mode")
@@ -272,7 +273,7 @@ func planIdentity(t *testing.T, dir string) string {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, dir, func() int {
-		return Run([]string{"plan"}, &stdout, &stderr)
+		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("plan failed in %s: %s", dir, stderr.String())
