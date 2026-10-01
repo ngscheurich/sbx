@@ -474,7 +474,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		},
 		Tmpfs: []Tmpfs{
 			{Target: "/tmp", Size: "512M"},
-			{Target: "/run", Size: "64M", NoExec: true},
+			{Target: "/run", Size: "64M"},
 		},
 		Named: []NamedMount{{Name: "abc-cache", Target: "/cache"}},
 		Owned: []OwnedMount{
@@ -496,7 +496,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		"--mount-dir", "/src:/workspace",
 		"--mount-file", "/notes:/mnt/notes:ro",
 		"--tmpfs", "/tmp:512M",
-		"--tmpfs", "/run:64M:noexec",
+		"--tmpfs", "/run:64M",
 		"--mount-named", "abc-cache:/cache",
 		"--mount-owned", "/scratch",
 		"--mount-owned", "/data:kind=disk,size=8G",

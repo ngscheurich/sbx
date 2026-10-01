@@ -267,7 +267,7 @@ egress = "none"
 		t.Fatalf("Sandbox: %v", err)
 	}
 	o := tr.Options
-	if len(o.Tmpfs) != 2 || o.Tmpfs[0].Target != "/tmp" || o.Tmpfs[0].Size != "512M" || o.Tmpfs[0].NoExec {
+	if len(o.Tmpfs) != 2 || o.Tmpfs[0].Target != "/tmp" || o.Tmpfs[0].Size != "512M" {
 		t.Errorf("Tmpfs = %+v", o.Tmpfs)
 	}
 	if len(o.Owned) != 1 || o.Owned[0].Kind != "disk" || o.Owned[0].Size != "2G" || o.Owned[0].Target != "/var/lib/data" {

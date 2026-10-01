@@ -167,14 +167,16 @@ type Mount struct {
 	IsFile bool
 }
 
-// Tmpfs is one guest tmpfs passed as --tmpfs PATH:SIZE[:OPTIONS].
+// Tmpfs is one guest tmpfs passed as --tmpfs PATH:SIZE.
+//
+// The noexec option is deliberately absent: msb 0.7.5 silently drops the
+// ":noexec" suffix, so sbx rejects noexec at configuration load instead of
+// mounting an executable tmpfs when the project asked for the opposite.
 type Tmpfs struct {
 	// Target is an absolute guest path.
 	Target string
 	// Size is a size in msb's format, such as "512M".
 	Size string
-	// NoExec adds the noexec option (spelling UNVERIFIED).
-	NoExec bool
 }
 
 // NamedMount mounts an existing named volume, passed as
@@ -282,11 +284,7 @@ func CreateArgs(o CreateOptions) []string {
 		args = append(args, flag, spec)
 	}
 	for _, tf := range o.Tmpfs {
-		spec := tf.Target + ":" + tf.Size
-		if tf.NoExec {
-			spec += ":noexec" // UNVERIFIED tmpfs option spelling
-		}
-		args = append(args, "--tmpfs", spec)
+		args = append(args, "--tmpfs", tf.Target+":"+tf.Size)
 	}
 	for _, nm := range o.Named {
 		args = append(args, "--mount-named", nm.Name+":"+nm.Target)

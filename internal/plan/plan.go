@@ -101,11 +101,7 @@ func (p Plan) Render() string {
 			fmt.Fprintf(&b, "    - bind %s -> %s%s\n", m.Source, m.Target, ro)
 		}
 		for _, tf := range tr.Options.Tmpfs {
-			extra := ""
-			if tf.NoExec {
-				extra = ", noexec"
-			}
-			fmt.Fprintf(&b, "    - tmpfs %s (%s%s)\n", tf.Target, tf.Size, extra)
+			fmt.Fprintf(&b, "    - tmpfs %s (%s)\n", tf.Target, tf.Size)
 		}
 	}
 	if len(tr.Options.Named) > 0 || len(tr.Options.Owned) > 0 {

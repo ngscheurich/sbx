@@ -307,7 +307,6 @@ target = "/mnt/state"
 type = "tmpfs"
 target = "/tmp"
 size = "512M"
-noexec = true
 
 [network]
 egress = "public"
@@ -329,7 +328,7 @@ egress = "public"
 	if cfg.Mounts[1].ReadOnly {
 		t.Errorf("bind mount 2 should default to read-write: %+v", cfg.Mounts[1])
 	}
-	if cfg.Mounts[2].Type != "tmpfs" || cfg.Mounts[2].Size != "512M" || !cfg.Mounts[2].NoExec {
+	if cfg.Mounts[2].Type != "tmpfs" || cfg.Mounts[2].Size != "512M" {
 		t.Errorf("tmpfs mount = %+v", cfg.Mounts[2])
 	}
 }
@@ -593,6 +592,13 @@ source = "./x"
 target = "/x"
 noexec = true
 `, `noexec`},
+		{"tmpfs with noexec", base + `
+[[mounts]]
+type = "tmpfs"
+target = "/tmp"
+size = "64M"
+noexec = true
+`, `not supported yet`},
 		{"bind with unformatted size", base + `
 [[mounts]]
 type = "bind"

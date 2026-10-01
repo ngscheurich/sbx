@@ -220,6 +220,9 @@ func (c *Config) validateMounts() []string {
 			if m.ReadOnly {
 				problems = append(problems, where+": read_only belongs to bind mounts")
 			}
+			if m.NoExec {
+				problems = append(problems, where+": noexec is declared but not supported yet; msb 0.7.5 silently drops the option, and sbx refuses to mount an executable tmpfs when the project asked for the opposite")
+			}
 		case "":
 			problems = append(problems, where+`: type is required, "bind" or "tmpfs"`)
 		default:

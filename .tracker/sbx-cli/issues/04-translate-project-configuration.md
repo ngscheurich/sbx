@@ -118,3 +118,14 @@ named after the map key (`DEMO_TOKEN`), and its value is the placeholder
 allowed destinations. The spec's backend verification records the
 observation and the unverified list now holds only the `:noexec` tmpfs
 spelling and `:ro` on `--mount-dir`.
+
+## Comments (addendum 6)
+
+Manual verification on msb 0.7.5 settled the `:noexec` question in the
+worst way: the `--tmpfs PATH:SIZE` spelling is applied faithfully
+(`/proc/mounts` showed `size=524288k` for a declared 512M), but msb
+silently drops the `:noexec` suffix — a script in the guest's /tmp
+executed normally. Per the fail-closed posture, sbx now rejects
+`noexec = true` at configuration load with a not-supported-yet error,
+`msb.Tmpfs` loses the field, and the pinned argv tests drop the suffix.
+The spec's unverified list narrows to `:ro` on `--mount-dir`.

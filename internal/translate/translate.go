@@ -55,7 +55,9 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 			}
 			mounts = append(mounts, msb.Mount{Source: source, Target: m.Target, ReadOnly: m.ReadOnly, IsFile: isFile})
 		case "tmpfs":
-			tmpfs = append(tmpfs, msb.Tmpfs{Target: m.Target, Size: m.Size, NoExec: m.NoExec})
+			// NoExec is rejected at configuration load, so it never
+			// reaches translation.
+			tmpfs = append(tmpfs, msb.Tmpfs{Target: m.Target, Size: m.Size})
 		}
 	}
 

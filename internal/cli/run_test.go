@@ -351,7 +351,6 @@ read_only = true
 type = "tmpfs"
 target = "/tmp"
 size = "512M"
-noexec = true
 
 [volumes.scratch]
 target = "/scratch"
@@ -385,7 +384,7 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 		"--memory", "2G",
 		"--mount-dir", worktree + ":/work",
 		"--mount-file", worktree + "/seed.txt:/mnt/seed.txt:ro",
-		"--tmpfs", "/tmp:512M:noexec",
+		"--tmpfs", "/tmp:512M",
 		"--mount-owned", "/scratch",
 		"--env", "MODE=test",
 		"--label", "sbx.managed=1",
