@@ -182,7 +182,7 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 		"--cpus", "2",
 		"--memory", "2G",
 		"--mount-dir", worktree + ":/workspace",
-		"--mount-dir", worktree + "/host-notes.txt:/mnt/host-notes.txt:ro",
+		"--mount-file", worktree + "/host-notes.txt:/mnt/host-notes.txt:ro",
 		"--mount-dir", worktree + "/host-state:/mnt/host-state",
 		"--label", "sbx.managed=1",
 		"--label", "sbx.mode=disposable",

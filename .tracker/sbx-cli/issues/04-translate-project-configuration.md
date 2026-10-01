@@ -79,3 +79,12 @@ closed (`size` on a bind, `read_only` on a tmpfs, `noexec` on a bind), test
 TOML variants are derived from the fixture file with a
 `testsupport.FixtureTOML` strip helper so fixture and tests cannot drift,
 and the plan's sandbox-volume line no longer repeats the target.
+
+## Comments (addendum 2)
+
+Real-host testing (the first manual pass) caught a translation bug: ticket
+04 kept the `--mount-dir` flag that ticket 03 pinned when the only bind was
+the Workspace, and msb rejects a file source with "mount-dir source is not a
+directory". sbx now classifies each resolved bind source with the `os.Stat`
+it already performs and emits `--mount-file` for a regular file,
+`--mount-dir` for a directory. Pinned tests updated on both surfaces.

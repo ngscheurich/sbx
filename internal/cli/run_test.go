@@ -384,7 +384,7 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 		"--cpus", "2",
 		"--memory", "2G",
 		"--mount-dir", worktree + ":/work",
-		"--mount-dir", worktree + "/seed.txt:/mnt/seed.txt:ro",
+		"--mount-file", worktree + "/seed.txt:/mnt/seed.txt:ro",
 		"--tmpfs", "/tmp:512M:noexec",
 		"--mount-owned", "/scratch",
 		"--env", "MODE=test",

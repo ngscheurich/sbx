@@ -470,7 +470,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		Memory: "2G",
 		Mounts: []Mount{
 			{Source: "/src", Target: "/workspace"},
-			{Source: "/notes", Target: "/mnt/notes", ReadOnly: true},
+			{Source: "/notes", Target: "/mnt/notes", ReadOnly: true, IsFile: true},
 		},
 		Tmpfs: []Tmpfs{
 			{Target: "/tmp", Size: "512M"},
@@ -494,7 +494,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		"--cpus", "2.5",
 		"--memory", "2G",
 		"--mount-dir", "/src:/workspace",
-		"--mount-dir", "/notes:/mnt/notes:ro",
+		"--mount-file", "/notes:/mnt/notes:ro",
 		"--tmpfs", "/tmp:512M",
 		"--tmpfs", "/run:64M:noexec",
 		"--mount-named", "abc-cache:/cache",

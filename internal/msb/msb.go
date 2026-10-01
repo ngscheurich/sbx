@@ -153,7 +153,8 @@ type Label struct {
 	Value string
 }
 
-// Mount is one host bind passed as --mount-dir SOURCE:DEST[:OPTIONS].
+// Mount is one host bind, passed as --mount-dir SOURCE:DEST[:OPTIONS] for
+// a directory source or --mount-file SOURCE:DEST[:OPTIONS] for a file.
 type Mount struct {
 	// Source is an absolute host path.
 	Source string
@@ -161,6 +162,9 @@ type Mount struct {
 	Target string
 	// ReadOnly adds the :ro suffix.
 	ReadOnly bool
+	// IsFile selects --mount-file; the zero value (a directory source)
+	// selects --mount-dir.
+	IsFile bool
 }
 
 // Tmpfs is one guest tmpfs passed as --tmpfs PATH:SIZE[:OPTIONS].
@@ -251,9 +255,10 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 // disposable runs pass no name and let msb own both naming and lifecycle.
 //
 // Flag spellings come from `msb create --help` (msb 0.7.5): --mount-dir
-// SOURCE:DEST[:OPTIONS], --tmpfs PATH:SIZE[:OPTIONS], --mount-named
-// NAME:DEST, --mount-owned DEST[:OPTIONS], -e KEY=value, --net-rule
-// allow@<target>, --net-default-egress, --tls-intercept, --secret-conf PATH.
+// SOURCE:DEST[:OPTIONS] and --mount-file SOURCE:DEST[:OPTIONS], --tmpfs
+// PATH:SIZE[:OPTIONS], --mount-named NAME:DEST, --mount-owned
+// DEST[:OPTIONS], -e KEY=value, --net-rule allow@<target>,
+// --net-default-egress, --tls-intercept, --secret-conf PATH.
 func CreateArgs(o CreateOptions) []string {
 	var args []string
 	if o.Name != "" {
@@ -268,7 +273,11 @@ func CreateArgs(o CreateOptions) []string {
 		if m.ReadOnly {
 			spec += ":ro" // :ro is in msb's documented mount option grammar
 		}
-		args = append(args, "--mount-dir", spec)
+		flag := "--mount-dir"
+		if m.IsFile {
+			flag = "--mount-file"
+		}
+		args = append(args, flag, spec)
 	}
 	for _, tf := range o.Tmpfs {
 		spec := tf.Target + ":" + tf.Size

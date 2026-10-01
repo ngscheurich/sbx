@@ -98,7 +98,10 @@ func TestSandboxTranslatesRestrictedFixture(t *testing.T) {
 	if o.Mounts[1].Source != root+"/host-notes.txt" || o.Mounts[1].Target != "/mnt/host-notes.txt" || !o.Mounts[1].ReadOnly {
 		t.Errorf("notes bind = %+v", o.Mounts[1])
 	}
-	if o.Mounts[2].Source != root+"/host-state" || o.Mounts[2].ReadOnly {
+	if !o.Mounts[1].IsFile {
+		t.Errorf("the notes file source should select --mount-file: %+v", o.Mounts[1])
+	}
+	if o.Mounts[2].Source != root+"/host-state" || o.Mounts[2].ReadOnly || o.Mounts[2].IsFile {
 		t.Errorf("state bind = %+v", o.Mounts[2])
 	}
 	if len(o.Named) != 2 {

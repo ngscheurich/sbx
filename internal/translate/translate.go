@@ -49,11 +49,11 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 	for i, m := range cfg.Mounts {
 		switch m.Type {
 		case "bind":
-			source, err := resolveBindSource(info.WorktreeRoot, m.Source)
+			source, isFile, err := resolveBindSource(info.WorktreeRoot, m.Source)
 			if err != nil {
 				return Translation{}, fmt.Errorf("mounts[%d]: %w", i, err)
 			}
-			mounts = append(mounts, msb.Mount{Source: source, Target: m.Target, ReadOnly: m.ReadOnly})
+			mounts = append(mounts, msb.Mount{Source: source, Target: m.Target, ReadOnly: m.ReadOnly, IsFile: isFile})
 		case "tmpfs":
 			tmpfs = append(tmpfs, msb.Tmpfs{Target: m.Target, Size: m.Size, NoExec: m.NoExec})
 		}
@@ -161,14 +161,16 @@ func SecretConfYAML(secrets map[string]config.SecretConfig, names []string) stri
 
 // resolveBindSource resolves a bind source to an absolute host path:
 // absolute as-is, "~/..." against the caller's home directory, and anything
-// else against the worktree root. A missing source is an error.
-func resolveBindSource(worktreeRoot, source string) (string, error) {
+// else against the worktree root. A missing source is an error. It also
+// reports whether the source is a regular file, which selects msb's
+// --mount-file over --mount-dir.
+func resolveBindSource(worktreeRoot, source string) (string, bool, error) {
 	var resolved string
 	switch {
 	case strings.HasPrefix(source, "~"):
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("expanding %q: %w", source, err)
+			return "", false, fmt.Errorf("expanding %q: %w", source, err)
 		}
 		resolved = filepath.Join(home, strings.TrimPrefix(source, "~"))
 	case filepath.IsAbs(source):
@@ -176,10 +178,11 @@ func resolveBindSource(worktreeRoot, source string) (string, error) {
 	default:
 		resolved = filepath.Join(worktreeRoot, source)
 	}
-	if _, err := os.Stat(resolved); err != nil {
-		return "", fmt.Errorf("bind source %q does not exist (resolved to %s)", source, resolved)
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", false, fmt.Errorf("bind source %q does not exist (resolved to %s)", source, resolved)
 	}
-	return resolved, nil
+	return resolved, !info.IsDir(), nil
 }
 
 func sortedVolumeNames(cfg config.Config) []string {
