@@ -40,8 +40,7 @@ func TestCreateExactArgv(t *testing.T) {
 		t.Fatalf("fake msb saw %d calls, want 1", len(calls))
 	}
 	want := []string{
-		"create", "app-main-12345678-run-abc123",
-		"--image", "alpine:3.20",
+		"create", "app-main-12345678-run-abc123", "alpine:3.20",
 		"--cpus", "2",
 		"--memory", "2G",
 		"--mount", "/repo/wt:/workspace",
@@ -77,7 +76,7 @@ func TestCreateWithoutNetConfAndFractionalCPUs(t *testing.T) {
 			t.Errorf("create argv contains %q with no mounts, labels, or policy: %q", banned, got)
 		}
 	}
-	if !equal(got, []string{"create", "box", "--image", "alpine:3.20", "--cpus", "1.5", "--memory", "512M"}) {
+	if !equal(got, []string{"create", "box", "alpine:3.20", "--cpus", "1.5", "--memory", "512M"}) {
 		t.Errorf("create argv mismatch: %q", got)
 	}
 }

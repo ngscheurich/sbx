@@ -178,13 +178,14 @@ type CreateOptions struct {
 }
 
 // Create runs `msb create`. Argument order is fixed and pinned by tests.
-// The image's ENTRYPOINT and CMD play no part here: msb boots the VM
-// without running the image's default command, and sbx never consults
-// either (ADR-0007).
+// Real msb 0.7.3 takes the image as a positional argument after the sandbox
+// name (`msb create [OPTIONS] [IMAGE]`); the remaining flag spellings are
+// verified only where the real host has confirmed them. The image's
+// ENTRYPOINT and CMD play no part here: msb boots the VM without running
+// the image's default command, and sbx never consults either (ADR-0007).
 func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 	args := []string{
-		"create", o.Name,
-		"--image", o.Image,
+		"create", o.Name, o.Image,
 		"--cpus", FormatCPUs(o.CPUs),
 		"--memory", o.Memory,
 	}

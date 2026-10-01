@@ -66,8 +66,7 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 	if !regexp.MustCompile(`^[a-z0-9-]+-run-[0-9a-f]{6}$`).MatchString(name) {
 		t.Errorf("create name %q is not a unique disposable-run name", name)
 	}
-	want := []string{"create", name,
-		"--image", "alpine:3.20",
+	want := []string{"create", name, "alpine:3.20",
 		"--cpus", "2",
 		"--memory", "2G",
 		"--mount", worktreeOf(t, fake) + ":/workspace",
@@ -75,7 +74,8 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 		"--label", "sbx.mode=disposable",
 		"--label", "sbx.worktree=" + worktreeOf(t, fake),
 	}
-	// create[0] is "create"; compare the remainder against the translation.
+	// The full create argv, image positional included, is compared
+	// against the translation.
 	if !equal(create, want) {
 		t.Errorf("create argv mismatch:\n got: %q\nwant: %q", create, want)
 	}
