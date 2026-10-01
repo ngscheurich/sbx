@@ -264,8 +264,8 @@ func CreateArgs(o CreateOptions) []string {
 	for _, m := range o.Mounts {
 		spec := m.Source + ":" + m.Target
 		if m.ReadOnly {
-			// :ro verified on a real host for --mount-file (ticket 04);
-			// the spelling on --mount-dir remains unverified.
+			// :ro verified on a real host for both --mount-file and
+			// --mount-dir (ticket 04).
 			spec += ":ro"
 		}
 		flag := "--mount-dir"

@@ -144,3 +144,15 @@ rejection is reverted. Any `${` pattern in a generated mount string
 fails translation, since msb expands `${NAME}` in YAML files. The
 spec's translation and backend-verification sections record both
 observations; the unverified list is now just `:ro` on `--mount-dir`.
+
+## Comments (addendum 8)
+
+The final unverified item fell: msb 0.7.5 honors `:ro` on `--mount-dir`
+too — a read-only directory bind rejected a guest write with "Read-only
+file system". Ticket 04's real-host verification is complete: binds
+(file and directory, read-only and read-write), tmpfs with noexec,
+environment, allowlist and DNS flags, TLS interception, and the secret
+map translation all behave as translated against the msb build sbx
+targets. The remaining spec-level items (volumes JSON capacities,
+signal forwarding, secret restarts) belong to ticket 01 and later
+tickets.
