@@ -99,3 +99,12 @@ applies `:ro` on `--mount-file` and that per-mount-point read-only layers
 work over read-write ones. The spec's backend verification records the
 observation; `:ro` on `--mount-dir` and the `:noexec` tmpfs spelling are
 still unverified.
+
+## Comments (addendum 4)
+
+Manual verification on msb 0.7.5: `msb ls --format json` records carry no
+label field at all (only name, image, status, and created_at), while
+`msb inspect <name> --format json` reports labels under `active_config`
+(or `config` when stopped). Ownership and attribution checks in later tickets must use
+`msb inspect`, not the listing; the spec's backend verification records
+the schema difference.
