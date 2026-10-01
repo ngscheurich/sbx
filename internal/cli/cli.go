@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -89,4 +90,23 @@ func discoverConfig() (gitx.Info, config.Config, error) {
 		return gitx.Info{}, config.Config{}, err
 	}
 	return info, cfg, nil
+}
+
+// writeTempFile creates a temporary file outside the repository with the
+// given content and returns its path.
+func writeTempFile(pattern, content string) (string, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }

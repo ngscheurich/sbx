@@ -76,6 +76,13 @@ create)
   fi
   ;;
 exec|run)
+  prev=""
+  for a in "$@"; do
+    if [ "$prev" = "--secret-conf" ] && [ -f "$a" ]; then
+      cp "$a" "$dir/secret-conf.$n"
+    fi
+    prev="$a"
+  done
   if [ -n "$FAKE_MSB_EXEC_SLEEP" ]; then
     trap 'exit 143' TERM
     # Run the sleep in the background and wait on it so the TERM trap
@@ -198,9 +205,51 @@ func (l Log) Stdin(t *testing.T) string {
 	return string(data)
 }
 
+// SecretConf returns the content of the secret-name map the fake captured
+// from the --secret-conf argument of the call at the given index.
+func (l Log) SecretConf(t *testing.T, index int) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(l.dir, "secret-conf."+strconv.Itoa(index)))
+	if err != nil {
+		t.Fatalf("reading fake msb secret-conf capture for call %d: %v", index, err)
+	}
+	return string(data)
+}
+
 // FailCreate makes the fake refuse every create whose sandbox name contains
 // the given substring, simulating a creation failure.
 func (l Log) FailCreate(t *testing.T, substring string) {
 	t.Helper()
 	t.Setenv("FAKE_MSB_CREATE_FAIL", substring)
+}
+
+// FixtureTOML reads a fixture sbx.toml and removes the named top-level
+// table blocks — each from its "[header]" line to the next "[" header —
+// so tests derive variants from the fixture instead of duplicating its
+// content and drifting out of sync.
+func FixtureTOML(t *testing.T, path string, strip ...string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading fixture %s: %v", path, err)
+	}
+	stripSet := make(map[string]struct{}, len(strip))
+	for _, h := range strip {
+		stripSet[h] = struct{}{}
+	}
+	var out []string
+	stripping := false
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "[") {
+			_, drop := stripSet[strings.TrimSpace(line)]
+			stripping = drop
+			if drop {
+				continue
+			}
+		}
+		if !stripping {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }

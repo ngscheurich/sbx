@@ -1,6 +1,6 @@
 # Translate restricted CLI project configuration
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02, 03
 
 ## Goal
@@ -17,3 +17,65 @@ Extend strict TOML validation and the msb adapter for Workspace target, bind and
 ## References
 
 [Configuration, secrets, msb translation and restricted fixture](../spec.md); [ADR-0001](../../../docs/adrs/0001-sbx-native-project-configuration.md).
+
+## Comments
+
+Implemented on `main`.
+
+- `internal/config` parses and validates the full translated surface:
+  `[workspace]` (default `/workspace`), `[[mounts]]` bind/tmpfs with
+  duplicate-target rejection (including the Workspace target), `[volumes]`
+  with scope/kind/size/quota rules and `[a-z][a-z0-9_]*` names, `[env]` and
+  `[secrets]` with `[A-Za-z_][A-Za-z0-9_]*` names, `dns_nameservers`
+  validated as IP or IP:PORT and rejected under `egress = "none"`, and
+  allowlist entries shared with secrets. `ports`, `build`, `bootstrap`, and
+  `image_check` remain explicitly rejected.
+- New `internal/translate` is the shared seam for both modes: it resolves
+  bind sources (absolute, `~/...` against home, relative to the worktree
+  root; a missing source fails before anything is created), renders
+  `msb.CreateOptions`, and generates the secret-name map. `sbx run` calls
+  `CheckSecretEnv` before any msb call; `plan` needs only names and skips
+  it. All names in plan and arguments; values travel only through the msb
+  subprocess's environment.
+- `internal/msb.CreateOptions` grew `Tmpfs`, `Named`, `Owned`, `Env`,
+  `NetRules`, `DnsNameservers`, `TLSIntercept`, and `SecretConf`;
+  `CreateArgs` is now exported and pinned by tests. Flag spellings come from
+  `msb create --help` on the installed 0.7.5: `--tmpfs PATH:SIZE[:OPTIONS]`,
+  `--mount-named NAME:DEST`, `--mount-owned DEST[:OPTIONS]` with
+  `kind=disk,size=S` for disks, `-e`, `--net-rule allow@<entry>`,
+  `--net-default-egress deny`, `--tls-intercept`, `--dns-nameserver`, and
+  `--secret-conf PATH`.
+- Translation decisions recorded in the spec's "Translation to msb":
+  allowlist egress uses native `--net-rule` flags plus deny-by-default
+  egress and `--tls-intercept` (strict hostname rules need intercepted
+  HTTPS); the generated `--net-conf` file idea is dropped entirely, and the
+  one generated file is now the `--secret-conf` secret-name map, written
+  outside the repository and removed after the run. It holds `${NAME}`
+  source references, never values; msb resolves them from its own
+  environment at start. Secret guest names come from the map key per the
+  secrets documentation; the exact guest-variable spelling is recorded as
+  unverified pending ticket 01's host check.
+- `sbx run` fails closed on declared Project volumes before any msb call
+  until ticket 05's compatibility checks exist. `sbx plan` renders the full
+  translation for the persistent mode — mounts, volumes with namespaced
+  backend names, environment, network policy, redacted secret map, and the
+  `msb create` argument preview — and reports translation failures such as
+  a missing bind source instead of a partial plan.
+- `fixtures/restricted-cli/` is complete per the spec (Dockerfile, sbx.toml,
+  host-notes.txt, host-state/.keep). Tests copy it into temporary
+  repositories: verbatim, it fails closed before any msb call ([build] and
+  Project volumes are not executable yet); with `[build]` and Project
+  volumes removed, the full run argv is pinned, and with only `[build]`
+  removed the Plan shows the Project-volume translation. The ticket 12
+  fixture test will adopt the executable form as later tickets land.
+- UNVERIFIED on a real host: the `:noexec` tmpfs option spelling, and
+  whether a `--secret-conf` map keys the guest environment variable as
+  documented; both are recorded in the spec's unverified list.
+
+## Comments (addendum)
+
+Code-review fixes folded in: bind/tmpfs field cross-assignments now fail
+closed (`size` on a bind, `read_only` on a tmpfs, `noexec` on a bind), test
+TOML variants are derived from the fixture file with a
+`testsupport.FixtureTOML` strip helper so fixture and tests cannot drift,
+and the plan's sandbox-volume line no longer repeats the target.

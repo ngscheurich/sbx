@@ -159,8 +159,38 @@ type Mount struct {
 	Source string
 	// Target is an absolute guest path.
 	Target string
-	// ReadOnly adds the :ro suffix (option spelling unverified).
+	// ReadOnly adds the :ro suffix.
 	ReadOnly bool
+}
+
+// Tmpfs is one guest tmpfs passed as --tmpfs PATH:SIZE[:OPTIONS].
+type Tmpfs struct {
+	// Target is an absolute guest path.
+	Target string
+	// Size is a size in msb's format, such as "512M".
+	Size string
+	// NoExec adds the noexec option (spelling UNVERIFIED).
+	NoExec bool
+}
+
+// NamedMount mounts an existing named volume, passed as
+// --mount-named NAME:DEST. Project volumes use it.
+type NamedMount struct {
+	// Name is the backend volume name.
+	Name string
+	// Target is an absolute guest path.
+	Target string
+}
+
+// OwnedMount creates a private volume removed with its sandbox, passed as
+// --mount-owned DEST[:OPTIONS]. Sandbox volumes use it.
+type OwnedMount struct {
+	// Target is an absolute guest path.
+	Target string
+	// Kind is "dir" (the msb default) or "disk".
+	Kind string
+	// Size is required for disks, in msb's format.
+	Size string
 }
 
 // CreateOptions carries everything `msb create` receives for one sandbox.
@@ -173,10 +203,29 @@ type CreateOptions struct {
 	CPUs float64
 	// Memory is a size in msb's format, such as "2G".
 	Memory string
-	// Mounts are bind mounts in declaration order.
+	// Mounts are host binds in translation order (Workspace first).
 	Mounts []Mount
+	// Tmpfs are guest tmpfs mounts in declaration order.
+	Tmpfs []Tmpfs
+	// Named are existing named volumes mounted into the sandbox.
+	Named []NamedMount
+	// Owned are private volumes created with the sandbox.
+	Owned []OwnedMount
+	// Env entries are passed as -e KEY=value, sorted by key.
+	Env []string
 	// Labels are applied in order.
 	Labels []Label
+	// NetRules are --net-rule tokens, such as "allow@example.com".
+	NetRules []string
+	// DnsNameservers are passed as repeatable --dns-nameserver flags.
+	DnsNameservers []string
+	// TLSIntercept turns on msb's TLS inspection, which allowlist egress and
+	// declared secrets require.
+	TLSIntercept bool
+	// SecretConf is the path of a generated secret-name map passed as
+	// --secret-conf. It contains secret names and host-variable references
+	// only; msb resolves the values from its own environment at start time.
+	SecretConf string
 	// NoNet disables all network access (egress "none" in sbx terms).
 	NoNet bool
 }
@@ -187,20 +236,25 @@ type CreateOptions struct {
 // repeatable `--label KEY=VALUE`, and `--no-net` for no network access.
 // msb boots the VM without running the image's default command.
 func (c CLI) Create(ctx context.Context, o CreateOptions) error {
-	args := append([]string{"create"}, createArgs(o)...)
+	args := append([]string{"create"}, CreateArgs(o)...)
 	if _, err := c.run(ctx, args...); err != nil {
 		return fmt.Errorf("creating sandbox %s: %w", o.Name, err)
 	}
 	return nil
 }
 
-// createArgs renders the shared `msb create`-style argument prefix: the
-// optional name, positional image, resources, mounts, labels, and network
-// restriction. An empty Name omits --name entirely: msb run treats an
-// explicitly named sandbox as one to keep, while an auto-generated one-shot
-// is removed when the command completes — so disposable runs pass no name
-// and let msb own both naming and lifecycle.
-func createArgs(o CreateOptions) []string {
+// CreateArgs renders the shared `msb create`-style argument prefix: the
+// optional name, positional image, resources, mounts, environment, labels,
+// network restriction, and secret map. An empty Name omits --name entirely:
+// msb run treats an explicitly named sandbox as one to keep, while an
+// auto-generated one-shot is removed when the command completes — so
+// disposable runs pass no name and let msb own both naming and lifecycle.
+//
+// Flag spellings come from `msb create --help` (msb 0.7.5): --mount-dir
+// SOURCE:DEST[:OPTIONS], --tmpfs PATH:SIZE[:OPTIONS], --mount-named
+// NAME:DEST, --mount-owned DEST[:OPTIONS], -e KEY=value, --net-rule
+// allow@<target>, --net-default-egress, --tls-intercept, --secret-conf PATH.
+func CreateArgs(o CreateOptions) []string {
 	var args []string
 	if o.Name != "" {
 		args = append(args, "--name", o.Name)
@@ -212,15 +266,52 @@ func createArgs(o CreateOptions) []string {
 	for _, m := range o.Mounts {
 		spec := m.Source + ":" + m.Target
 		if m.ReadOnly {
-			spec += ":ro" // UNVERIFIED read-only option spelling
+			spec += ":ro" // :ro is in msb's documented mount option grammar
 		}
 		args = append(args, "--mount-dir", spec)
+	}
+	for _, tf := range o.Tmpfs {
+		spec := tf.Target + ":" + tf.Size
+		if tf.NoExec {
+			spec += ":noexec" // UNVERIFIED tmpfs option spelling
+		}
+		args = append(args, "--tmpfs", spec)
+	}
+	for _, nm := range o.Named {
+		args = append(args, "--mount-named", nm.Name+":"+nm.Target)
+	}
+	for _, om := range o.Owned {
+		spec := om.Target
+		if om.Kind == "disk" {
+			spec += ":kind=disk,size=" + om.Size
+		}
+		args = append(args, "--mount-owned", spec)
+	}
+	for _, e := range o.Env {
+		args = append(args, "--env", e)
 	}
 	for _, l := range o.Labels {
 		args = append(args, "--label", l.Key+"="+l.Value)
 	}
+	for _, rule := range o.NetRules {
+		args = append(args, "--net-rule", rule)
+	}
+	if len(o.NetRules) > 0 {
+		// With rules present msb's egress default is already deny; stating it
+		// keeps the allowlist policy explicit rather than incidental.
+		args = append(args, "--net-default-egress", "deny")
+	}
+	if o.TLSIntercept {
+		args = append(args, "--tls-intercept")
+	}
+	for _, ns := range o.DnsNameservers {
+		args = append(args, "--dns-nameserver", ns)
+	}
 	if o.NoNet {
 		args = append(args, "--no-net")
+	}
+	if o.SecretConf != "" {
+		args = append(args, "--secret-conf", o.SecretConf)
 	}
 	return args
 }
@@ -244,7 +335,7 @@ type RunOptions struct {
 // sandbox's whole lifecycle is msb run's own behavior, and sbx adds no
 // cleanup step.
 func (c CLI) Run(ctx context.Context, o RunOptions, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	args := append([]string{"run"}, createArgs(o.CreateOptions)...)
+	args := append([]string{"run"}, CreateArgs(o.CreateOptions)...)
 	if o.Workdir != "" {
 		args = append(args, "--workdir", o.Workdir)
 	}

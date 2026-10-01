@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -293,49 +295,227 @@ func TestRunPullsMissingPrebuiltImage(t *testing.T) {
 	}
 }
 
-// TestRunRejectsUntranslatedSettingsBeforeAnything checks that settings
-// this build does not translate stop the run before any msb call.
-func TestRunRejectsUntranslatedSettingsBeforeAnything(t *testing.T) {
-	cases := map[string]string{
-		"mounts": `
+// TestRunFailsClosedOnProjectVolumes checks that a declared Project volume
+// stops the run before any msb call: its compatibility checks are not
+// implemented yet, so the volume must not be mounted unprotected.
+func TestRunFailsClosedOnProjectVolumes(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	worktree, _ := fixtureRepo(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
 
-[[mounts]]
-type = "bind"
-source = "data"
-target = "/data"
+[volumes.cache]
+target = "/cache"
+scope = "project"
 
 [network]
 egress = "public"
-`,
-		"allowlist egress": `
+`)
+	var stdout, stderr bytes.Buffer
+	code := chdir(t, worktree, func() int {
+		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	})
+	if code == 0 {
+		t.Fatal("run succeeded with a declared Project volume")
+	}
+	if !strings.Contains(stderr.String(), "project volumes") {
+		t.Errorf("stderr does not name the project volumes: %s", stderr.String())
+	}
+	if got := fake.Calls(); len(got) != 0 {
+		t.Errorf("msb was called before rejection: %v", got)
+	}
+}
+
+// TestRunTranslatesMountsEnvAndAllowlist checks the full msb run argv for
+// bind and tmpfs mounts, environment, sandbox volumes, and allowlist
+// egress with DNS, resolved against the worktree root.
+func TestRunTranslatesMountsEnvAndAllowlist(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	t.Setenv("SBX_TEST_TOKEN", "throwaway-value-7b2f")
+	worktree, _ := fixtureRepo(t, `
+image = "alpine:3.20"
+cpus = 2
+memory = "2G"
+
+[workspace]
+target = "/work"
+
+[[mounts]]
+type = "bind"
+source = "./seed.txt"
+target = "/mnt/seed.txt"
+read_only = true
+
+[[mounts]]
+type = "tmpfs"
+target = "/tmp"
+size = "512M"
+noexec = true
+
+[volumes.scratch]
+target = "/scratch"
+scope = "sandbox"
+
+[env]
+MODE = "test"
+
+[secrets.TEST_TOKEN]
+from_env = "SBX_TEST_TOKEN"
+allow = ["example.com"]
+
+[network]
+egress = "allowlist"
+allow = ["example.com", "*.example.org"]
+dns_nameservers = ["1.1.1.1", "8.8.8.8"]
+`)
+	var stdout, stderr bytes.Buffer
+	code := chdir(t, worktree, func() int {
+		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
+	}
+	calls := fake.Calls()
+	if len(calls) != 3 {
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+	}
+	want := []string{"run", "alpine:3.20",
+		"--cpus", "2",
+		"--memory", "2G",
+		"--mount-dir", worktree + ":/work",
+		"--mount-dir", worktree + "/seed.txt:/mnt/seed.txt:ro",
+		"--tmpfs", "/tmp:512M:noexec",
+		"--mount-owned", "/scratch",
+		"--env", "MODE=test",
+		"--label", "sbx.managed=1",
+		"--label", "sbx.mode=disposable",
+		"--label", "sbx.worktree=" + worktree,
+		"--net-rule", "allow@example.com",
+		"--net-rule", "allow@*.example.org",
+		"--net-default-egress", "deny",
+		"--tls-intercept",
+		"--dns-nameserver", "1.1.1.1",
+		"--dns-nameserver", "8.8.8.8",
+		"--secret-conf", "<path>",
+		"--workdir", "/work",
+		"--no-tty",
+		"--", "true",
+	}
+	// The --secret-conf value is a temporary path; the splice above marks
+	// it so the rest of the argv compares exactly.
+	runCall := calls[2].Args
+	if !equal(spliceSecretConf(runCall), want) {
+		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
+	}
+
+	// The secret map holds names and source references, never the value.
+	conf := fake.SecretConf(t, 2)
+	if !strings.Contains(conf, "TEST_TOKEN:") ||
+		!strings.Contains(conf, "${SBX_TEST_TOKEN}") ||
+		!strings.Contains(conf, "example.com") {
+		t.Errorf("secret map is missing the expected redacted content:\n%s", conf)
+	}
+	if strings.Contains(conf, "throwaway-value") {
+		t.Errorf("secret map contains the host secret value:\n%s", conf)
+	}
+	for _, call := range calls {
+		for _, a := range call.Args {
+			if strings.Contains(a, "throwaway-value") {
+				t.Errorf("host secret value leaked into msb arguments: %q", a)
+			}
+		}
+	}
+}
+
+// spliceSecretConf replaces the value after --secret-conf with a
+// placeholder so the argv comparison stays exact elsewhere.
+func spliceSecretConf(args []string) []string {
+	i := indexOf(args, "--secret-conf")
+	if i < 0 {
+		return args
+	}
+	out := append([]string{}, args[:i+1]...)
+	out = append(out, "<path>")
+	return append(out, args[i+2:]...)
+}
+
+// indexOf returns the index of the first occurrence of token, or -1.
+func indexOf(args []string, token string) int {
+	for i, a := range args {
+		if a == token {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestRunMissingSecretEnvFailsBeforeAnything checks that a declared secret
+// whose host variable is unset stops the run before any msb call.
+func TestRunMissingSecretEnvFailsBeforeAnything(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	worktree, _ := fixtureRepo(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
 
-[network]
-egress = "allowlist"
+[secrets.TOKEN]
+from_env = "SBX_DEFINITELY_UNSET_VARIABLE"
 allow = ["example.com"]
-`,
+
+[network]
+egress = "public"
+`)
+	var stdout, stderr bytes.Buffer
+	code := chdir(t, worktree, func() int {
+		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	})
+	if code == 0 {
+		t.Fatal("run succeeded with a missing secret host variable")
 	}
-	for name, toml := range cases {
-		t.Run(name, func(t *testing.T) {
-			fake := testsupport.FakeMSB(t)
-			worktree, _ := fixtureRepo(t, toml)
-			var stdout, stderr bytes.Buffer
-			code := chdir(t, worktree, func() int {
-				return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
-			})
-			if code == 0 {
-				t.Fatalf("%s: run succeeded with untranslated settings", name)
-			}
-			if got := fake.Calls(); len(got) != 0 {
-				t.Errorf("%s: msb was called before rejection: %v", name, got)
-			}
-		})
+	if !strings.Contains(stderr.String(), "SBX_DEFINITELY_UNSET_VARIABLE") {
+		t.Errorf("stderr does not name the missing variable: %s", stderr.String())
 	}
+	if got := fake.Calls(); len(got) != 0 {
+		t.Errorf("msb was called before rejection: %v", got)
+	}
+}
+
+// TestRunMountsWorktreeRootFromSubdirectory checks that a run invoked below
+// the worktree root still mounts the root, not the invocation directory.
+func TestRunMountsWorktreeRootFromSubdirectory(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	worktree, _ := fixtureRepo(t, disposableTOML)
+	sub := filepath.Join(worktree, "deep", "nested")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := chdir(t, sub, func() int {
+		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
+	}
+	if !contains(callsOf(fake), "--mount-dir") {
+		t.Fatal("no mount recorded")
+	}
+	for _, call := range fake.Calls() {
+		for i, a := range call.Args {
+			if a == "--mount-dir" && !strings.HasPrefix(call.Args[i+1], worktree+":") {
+				t.Errorf("mount source %q is not the worktree root %q", call.Args[i+1], worktree)
+			}
+		}
+	}
+}
+
+// callsOf flattens every recorded call's arguments.
+func callsOf(fake testsupport.Log) []string {
+	var out []string
+	for _, c := range fake.Calls() {
+		out = append(out, c.Args...)
+	}
+	return out
 }
 
 // TestRunLeavesNamingToMsb checks that sbx passes no --name for disposable

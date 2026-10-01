@@ -75,7 +75,7 @@ A secret's guest environment variable `<name>` holds a placeholder, and msb subs
 
 ### Translation to msb
 
-The msb adapter passes settings as msb command-line flags rather than a generated sandbox YAML file, because msb expands `${NAME}` in YAML and resolves relative paths against the file. Sandbox volumes become `--mount-owned`, Project volumes `--mount-named`, bind sources absolute paths, and `[env]` entries `-e` flags. The only generated file is a `--net-conf` network policy containing validated domains and nameservers, written outside the repository. The adapter stays a small, testable seam, not a speculative second backend.
+The msb adapter passes settings as msb command-line flags rather than a generated sandbox YAML file, because msb expands `${NAME}` in YAML and resolves relative paths against the file. Sandbox volumes become `--mount-owned`, Project volumes `--mount-named`, bind sources absolute paths, and `[env]` entries `--env` flags. Allowlist egress is native policy: one `--net-rule allow@<entry>` per allow entry with deny-by-default egress and `--tls-intercept`, because strict hostname rules can only see the request authority of intercepted HTTPS; `public` needs no flags and `none` is `--no-net`. Nameservers pass through as repeatable `--dns-nameserver` flags. Declared secrets become a generated secret-name map passed as `--secret-conf`, written outside the repository: the map holds each secret's guest name, its host variable as a `"${NAME}"` source reference, and its allow list — never a value — and msb resolves the values from its own environment at sandbox start. The adapter stays a small, testable seam, not a speculative second backend.
 
 ## Acceptance fixtures
 
@@ -319,7 +319,9 @@ Still unverified; confirm before implementing dependent behavior:
 - whether `msb volumes --format json` populates `capacity_bytes` and `quota_mib` for disk and quota-limited directory volumes;
 - whether `msb exec` forwards signals;
 - whether `--mount-owned` accepts a directory `quota` (v1 rejects it until confirmed);
-- whether `msb start` rereads a `--secret` from its own environment after a stop, which would require sbx to supply the secret on every start.
+- whether `msb start` rereads a `--secret` from its own environment after a stop, which would require sbx to supply the secret on every start;
+- whether the `:noexec` tmpfs option spelling and the `:ro` bind option spelling are accepted;
+- whether a `--secret-conf` map names the guest environment variable after the map key, holding a placeholder, as the secrets documentation describes.
 
 ## Backend references
 

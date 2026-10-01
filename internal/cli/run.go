@@ -12,13 +12,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/msb"
+	"github.com/ngscheurich/sbx/internal/translate"
 )
-
-// workspaceTarget is the default Workspace target: the worktree root is
-// mounted read-write here, and it is also the guest working directory. The
-// [workspace] table is rejected while untranslated, so no override exists.
-const workspaceTarget = "/workspace"
 
 // runDisposable implements `sbx run [-- <argv...>]`.
 func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -50,8 +47,19 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	if err != nil {
 		return fatal(err)
 	}
-	if cfg.Network.Egress == "allowlist" {
-		return fatal(fmt.Errorf(`network egress "allowlist" is declared but not translated yet; this build of sbx supports egress = "public" or "none" only`))
+	if err := preflight(cfg); err != nil {
+		return fatal(err)
+	}
+
+	// Secret host values travel only through the msb subprocess's
+	// environment, which passes the host environment through; sbx checks
+	// their presence here, before any resource changes.
+	if err := translate.CheckSecretEnv(cfg, os.LookupEnv); err != nil {
+		return fatal(err)
+	}
+	tr, err := translate.Sandbox(info, cfg, "disposable")
+	if err != nil {
+		return fatal(err)
 	}
 
 	if _, err := box.LocalContext(ctx); err != nil {
@@ -61,28 +69,25 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return fatal(err)
 	}
 
-	create := msb.CreateOptions{
-		// No Name: msb run keeps a sandbox that is explicitly named, and
-		// removes an auto-named one-shot when the command completes. The
-		// sbx.* labels carry attribution instead.
-		Image:  cfg.Image,
-		CPUs:   cfg.CPUs,
-		Memory: cfg.Memory,
-		Mounts: []msb.Mount{{Source: info.WorktreeRoot, Target: workspaceTarget}},
-		Labels: []msb.Label{
-			{Key: "sbx.managed", Value: "1"},
-			{Key: "sbx.mode", Value: "disposable"},
-			{Key: "sbx.worktree", Value: info.WorktreeRoot},
-		},
-		NoNet: cfg.Network.Egress == "none",
+	// The generated secret-name map holds names and "${HOST_VAR}" source
+	// references only; msb resolves the values from its own environment. It
+	// is written outside the repository and removed after the run.
+	if tr.SecretConfYAML != "" {
+		path, err := writeTempFile("sbx-secrets-*.yaml", tr.SecretConfYAML)
+		if err != nil {
+			return fatal(fmt.Errorf("writing the secret map: %w", err))
+		}
+		defer os.Remove(path)
+		tr.Options.SecretConf = path
 	}
+
 	guestArgv := argv
 	if len(guestArgv) == 0 {
 		guestArgv = []string{cfg.Shell}
 	}
 	code, err := box.Run(ctx, msb.RunOptions{
-		CreateOptions: create,
-		Workdir:       workspaceTarget,
+		CreateOptions: tr.Options,
+		Workdir:       tr.Workspace,
 		Argv:          guestArgv,
 	}, stdin, stdout, stderr)
 
@@ -93,4 +98,21 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return fatal(fmt.Errorf("running %s: %w", strings.Join(guestArgv, " "), err))
 	}
 	return code
+}
+
+// preflight rejects declared settings this build cannot honor before any
+// backend mutation. Project volumes are translated but their compatibility
+// checks do not exist yet, so declaring one fails closed (ticket 05 adds
+// the checks).
+func preflight(cfg config.Config) error {
+	var project []string
+	for name, v := range cfg.Volumes {
+		if v.Scope == "project" {
+			project = append(project, name)
+		}
+	}
+	if len(project) > 0 {
+		return fmt.Errorf("project volumes (%s) are declared but their compatibility checks are not implemented yet; remove them or wait for the next sbx release", strings.Join(project, ", "))
+	}
+	return nil
 }

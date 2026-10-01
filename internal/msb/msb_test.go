@@ -458,3 +458,82 @@ func dumpCalls(calls []testsupport.Call) string {
 	}
 	return b.String()
 }
+
+// TestCreateArgsFullSurface pins the create-style argument rendering for
+// every translated setting: mounts, tmpfs, named and owned volumes,
+// environment, network rules, DNS, TLS interception, and the secret map.
+func TestCreateArgsFullSurface(t *testing.T) {
+	args := CreateArgs(CreateOptions{
+		Name:   "box",
+		Image:  "alpine:3.20",
+		CPUs:   2.5,
+		Memory: "2G",
+		Mounts: []Mount{
+			{Source: "/src", Target: "/workspace"},
+			{Source: "/notes", Target: "/mnt/notes", ReadOnly: true},
+		},
+		Tmpfs: []Tmpfs{
+			{Target: "/tmp", Size: "512M"},
+			{Target: "/run", Size: "64M", NoExec: true},
+		},
+		Named: []NamedMount{{Name: "abc-cache", Target: "/cache"}},
+		Owned: []OwnedMount{
+			{Target: "/scratch"},
+			{Target: "/data", Kind: "disk", Size: "8G"},
+		},
+		Env:            []string{"A=1", "B=2"},
+		Labels:         []Label{{Key: "sbx.managed", Value: "1"}},
+		NetRules:       []string{"allow@example.com", "allow@*.example.org"},
+		TLSIntercept:   true,
+		DnsNameservers: []string{"1.1.1.1", "8.8.8.8"},
+		SecretConf:     "/tmp/secrets.yaml",
+	})
+	want := []string{
+		"--name", "box",
+		"alpine:3.20",
+		"--cpus", "2.5",
+		"--memory", "2G",
+		"--mount-dir", "/src:/workspace",
+		"--mount-dir", "/notes:/mnt/notes:ro",
+		"--tmpfs", "/tmp:512M",
+		"--tmpfs", "/run:64M:noexec",
+		"--mount-named", "abc-cache:/cache",
+		"--mount-owned", "/scratch",
+		"--mount-owned", "/data:kind=disk,size=8G",
+		"--env", "A=1",
+		"--env", "B=2",
+		"--label", "sbx.managed=1",
+		"--net-rule", "allow@example.com",
+		"--net-rule", "allow@*.example.org",
+		"--net-default-egress", "deny",
+		"--tls-intercept",
+		"--dns-nameserver", "1.1.1.1",
+		"--dns-nameserver", "8.8.8.8",
+		"--secret-conf", "/tmp/secrets.yaml",
+	}
+	if !equalStrings(args, want) {
+		t.Errorf("CreateArgs mismatch:\n got: %q\nwant: %q", args, want)
+	}
+}
+
+// TestCreateArgsMinimal pins the public-egress minimal form: no network
+// flags at all, msb's default policy.
+func TestCreateArgsMinimal(t *testing.T) {
+	args := CreateArgs(CreateOptions{Image: "alpine:3.20", CPUs: 1, Memory: "1G"})
+	want := []string{"alpine:3.20", "--cpus", "1", "--memory", "1G"}
+	if !equalStrings(args, want) {
+		t.Errorf("CreateArgs mismatch:\n got: %q\nwant: %q", args, want)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
