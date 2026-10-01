@@ -3,6 +3,9 @@
 // backend forced in its environment (ADR-0006). sbx never falls back to
 // another backend and never swallows a subprocess error.
 //
+// Translation always uses msb's long flag spellings (--name, --cpus,
+// --mount-dir, ...) for clarity; short aliases are never emitted.
+//
 // Flag spellings and output schemas follow the observed msb 0.7.3 behavior
 // recorded in the spec's backend verification; behaviors not yet confirmed
 // on a real host are marked UNVERIFIED.
