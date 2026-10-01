@@ -238,6 +238,31 @@ func TestPullIfMissing(t *testing.T) {
 	}
 }
 
+// TestPullFailureHintsAtImport checks that a failed pull surfaces both the
+// inspect and pull errors plus the local-import next step, instead of the
+// bare pull failure.
+func TestPullFailureHintsAtImport(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	t.Setenv("FAKE_MSB_IMAGE_MISSING", "built-locally:latest")
+	t.Setenv("FAKE_MSB_PULL_FAIL", "1")
+
+	box := CLI{}
+	err := box.PullIfMissing(context.Background(), "built-locally:latest")
+	if err == nil {
+		t.Fatal("pull of an unobtainable image succeeded")
+	}
+	for _, want := range []string{"built-locally:latest", "inspect", "pull failed", "msb load"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+	// Exactly one inspect and one pull, no repeats.
+	calls := fake.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("fake msb saw %d calls, want 2:\n%s", len(calls), dumpCalls(calls))
+	}
+}
+
 // TestRemoveExactArgv pins `msb rm <name>`.
 func TestRemoveExactArgv(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
@@ -317,4 +342,13 @@ func contains(args []string, flag string) bool {
 		}
 	}
 	return false
+}
+
+// dumpCalls renders recorded calls for failure messages.
+func dumpCalls(calls []testsupport.Call) string {
+	var b strings.Builder
+	for _, c := range calls {
+		b.WriteString("  " + strings.Join(c.Args, " ") + "\n")
+	}
+	return b.String()
 }

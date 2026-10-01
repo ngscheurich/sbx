@@ -263,16 +263,20 @@ func (c CLI) Remove(ctx context.Context, name string) error {
 
 // PullIfMissing confirms the image exists with `msb image inspect` and may
 // pull it with `msb image pull` when it does not. Inspection failure is not
-// treated as proof the image is missing; the pull attempt surfaces the real
-// error when the image cannot be obtained.
+// proof the image is absent — msb's image store is separate from Docker's,
+// so a locally built image that was never imported also fails here — and
+// when the pull fails too, both errors and a concrete next step surface
+// instead of the pull alone.
 func (c CLI) PullIfMissing(ctx context.Context, image string) error {
-	if _, err := c.run(ctx, "image", "inspect", image, "--format", "json"); err == nil {
+	_, inspectErr := c.run(ctx, "image", "inspect", image, "--format", "json")
+	if inspectErr == nil {
 		return nil
 	}
-	if _, err := c.run(ctx, "image", "pull", image); err != nil {
-		return fmt.Errorf("pulling image %s: %w", image, err)
+	_, pullErr := c.run(ctx, "image", "pull", image)
+	if pullErr == nil {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; `sbx build` will automate this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
 }
 
 // WriteNetConfNone writes the network policy file passed to --net-conf when
