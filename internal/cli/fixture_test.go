@@ -199,7 +199,7 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 		"--no-tty",
 		"--", "/bin/bash",
 	}
-	if !equal(spliceSecretConf(runCall), want) {
+	if !equal(spliceGenerated(runCall), want) {
 		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
 	}
 	conf := fake.SecretConf(t, 2)

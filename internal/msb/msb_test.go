@@ -472,10 +472,6 @@ func TestCreateArgsFullSurface(t *testing.T) {
 			{Source: "/src", Target: "/workspace"},
 			{Source: "/notes", Target: "/mnt/notes", ReadOnly: true, IsFile: true},
 		},
-		Tmpfs: []Tmpfs{
-			{Target: "/tmp", Size: "512M"},
-			{Target: "/run", Size: "64M"},
-		},
 		Named: []NamedMount{{Name: "abc-cache", Target: "/cache"}},
 		Owned: []OwnedMount{
 			{Target: "/scratch"},
@@ -487,6 +483,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		TLSIntercept:   true,
 		DnsNameservers: []string{"1.1.1.1", "8.8.8.8"},
 		SecretConf:     "/tmp/secrets.yaml",
+		FsConf:         "/tmp/fs-conf.yaml",
 	})
 	want := []string{
 		"--name", "box",
@@ -495,8 +492,6 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		"--memory", "2G",
 		"--mount-dir", "/src:/workspace",
 		"--mount-file", "/notes:/mnt/notes:ro",
-		"--tmpfs", "/tmp:512M",
-		"--tmpfs", "/run:64M",
 		"--mount-named", "abc-cache:/cache",
 		"--mount-owned", "/scratch",
 		"--mount-owned", "/data:kind=disk,size=8G",
@@ -510,6 +505,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		"--dns-nameserver", "1.1.1.1",
 		"--dns-nameserver", "8.8.8.8",
 		"--secret-conf", "/tmp/secrets.yaml",
+		"--fs-conf", "/tmp/fs-conf.yaml",
 	}
 	if !equalStrings(args, want) {
 		t.Errorf("CreateArgs mismatch:\n got: %q\nwant: %q", args, want)

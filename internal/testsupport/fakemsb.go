@@ -78,9 +78,10 @@ create)
 exec|run)
   prev=""
   for a in "$@"; do
-    if [ "$prev" = "--secret-conf" ] && [ -f "$a" ]; then
-      cp "$a" "$dir/secret-conf.$n"
-    fi
+    case "$prev" in
+    --secret-conf) [ -f "$a" ] && cp "$a" "$dir/secret-conf.$n" ;;
+    --fs-conf) [ -f "$a" ] && cp "$a" "$dir/fs-conf.$n" ;;
+    esac
     prev="$a"
   done
   if [ -n "$FAKE_MSB_EXEC_SLEEP" ]; then
@@ -212,6 +213,17 @@ func (l Log) SecretConf(t *testing.T, index int) string {
 	data, err := os.ReadFile(filepath.Join(l.dir, "secret-conf."+strconv.Itoa(index)))
 	if err != nil {
 		t.Fatalf("reading fake msb secret-conf capture for call %d: %v", index, err)
+	}
+	return string(data)
+}
+
+// FsConf returns the content of the filesystem configuration the fake
+// captured from the --fs-conf argument of the call at the given index.
+func (l Log) FsConf(t *testing.T, index int) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(l.dir, "fs-conf."+strconv.Itoa(index)))
+	if err != nil {
+		t.Fatalf("reading fake msb fs-conf capture for call %d: %v", index, err)
 	}
 	return string(data)
 }

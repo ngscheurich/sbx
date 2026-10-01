@@ -70,8 +70,10 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	}
 
 	// The generated secret-name map holds names and "${HOST_VAR}" source
-	// references only; msb resolves the values from its own environment. It
-	// is written outside the repository and removed after the run.
+	// references only; msb resolves the values from its own environment. The
+	// filesystem configuration carries the tmpfs mounts. Both are written
+	// outside the repository and removed after the run: the deferred removal
+	// happens after Run returns, when the subprocess no longer reads them.
 	if tr.SecretConfYAML != "" {
 		path, err := writeTempFile("sbx-secrets-*.yaml", tr.SecretConfYAML)
 		if err != nil {
@@ -79,6 +81,14 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		}
 		defer os.Remove(path)
 		tr.Options.SecretConf = path
+	}
+	if tr.FsConfYAML != "" {
+		path, err := writeTempFile("sbx-fs-conf-*.yaml", tr.FsConfYAML)
+		if err != nil {
+			return fatal(fmt.Errorf("writing the filesystem configuration: %w", err))
+		}
+		defer os.Remove(path)
+		tr.Options.FsConf = path
 	}
 
 	guestArgv := argv

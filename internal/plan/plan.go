@@ -53,16 +53,22 @@ func Compose(info gitx.Info, cfg config.Config) Plan {
 		p.TranslateErr = err
 		return p
 	}
-	// The secret map's path is chosen when a sandbox is created; the Plan
-	// shows the map's content and a placeholder instead.
+	// The generated files' paths are chosen when a sandbox is created; the
+	// Plan shows the maps' content and placeholders instead.
 	tr.Options.SecretConf = secretConfPlaceholder
+	if tr.FsConfYAML != "" {
+		tr.Options.FsConf = fsConfPlaceholder
+	}
 	p.Translation = tr
 	return p
 }
 
-// secretConfPlaceholder stands in for the generated secret map's path in
-// rendered msb arguments.
-const secretConfPlaceholder = "<secret map generated at creation>"
+// secretConfPlaceholder and fsConfPlaceholder stand in for the generated
+// files' paths in rendered msb arguments.
+const (
+	secretConfPlaceholder = "<secret map generated at creation>"
+	fsConfPlaceholder     = "<filesystem configuration generated at creation>"
+)
 
 // Render formats the Plan as human-readable text. The output is
 // deterministic and contains no secret values.
@@ -91,7 +97,7 @@ func (p Plan) Render() string {
 	tr := p.Translation
 	fmt.Fprintf(&b, "\nsandbox:\n")
 	fmt.Fprintf(&b, "  workspace: %s (the worktree root, read-write, also the working directory)\n", tr.Workspace)
-	if len(tr.Options.Mounts) > 1 || len(tr.Options.Tmpfs) > 0 {
+	if len(tr.Options.Mounts) > 1 || len(tr.Tmpfs) > 0 {
 		fmt.Fprintf(&b, "  mounts:\n")
 		for _, m := range tr.Options.Mounts[1:] {
 			ro := ""
@@ -100,8 +106,12 @@ func (p Plan) Render() string {
 			}
 			fmt.Fprintf(&b, "    - bind %s -> %s%s\n", m.Source, m.Target, ro)
 		}
-		for _, tf := range tr.Options.Tmpfs {
-			fmt.Fprintf(&b, "    - tmpfs %s (%s)\n", tf.Target, tf.Size)
+		for _, tf := range tr.Tmpfs {
+			extra := ""
+			if tf.NoExec {
+				extra = ", noexec"
+			}
+			fmt.Fprintf(&b, "    - tmpfs %s (%s%s)\n", tf.Target, tf.Size, extra)
 		}
 	}
 	if len(tr.Options.Named) > 0 || len(tr.Options.Owned) > 0 {

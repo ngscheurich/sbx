@@ -267,8 +267,15 @@ egress = "none"
 		t.Fatalf("Sandbox: %v", err)
 	}
 	o := tr.Options
-	if len(o.Tmpfs) != 2 || o.Tmpfs[0].Target != "/tmp" || o.Tmpfs[0].Size != "512M" {
-		t.Errorf("Tmpfs = %+v", o.Tmpfs)
+	if len(tr.Tmpfs) != 2 || tr.Tmpfs[0].Target != "/tmp" || tr.Tmpfs[0].Size != "512M" {
+		t.Errorf("Tmpfs = %+v", tr.Tmpfs)
+	}
+	if tr.FsConfYAML == "" {
+		t.Fatal("FsConfYAML is empty")
+	}
+	want := "mounts:\n  - tmpfs: { size: \"512M\" }\n    target: \"/tmp\"\n  - tmpfs: { size: \"64M\" }\n    target: \"/run\"\n"
+	if tr.FsConfYAML != want {
+		t.Errorf("FsConfYAML =\n%s\nwant:\n%s", tr.FsConfYAML, want)
 	}
 	if len(o.Owned) != 1 || o.Owned[0].Kind != "disk" || o.Owned[0].Size != "2G" || o.Owned[0].Target != "/var/lib/data" {
 		t.Errorf("Owned = %+v", o.Owned)
@@ -309,6 +316,18 @@ egress = "public"
 	}
 	if tr.Workspace != "/workspace" {
 		t.Errorf("default Workspace = %q", tr.Workspace)
+	}
+}
+
+func TestFsConfYAMLRejectsEnvReferencePatterns(t *testing.T) {
+	// msb expands ${NAME} in YAML files and rejects unknown variables, so a
+	// mount string containing the pattern must fail translation.
+	_, err := FsConfYAML([]Tmpfs{{Target: "/a${b}", Size: "64M"}})
+	if err == nil {
+		t.Fatal("FsConfYAML accepted a ${...} pattern")
+	}
+	if !strings.Contains(err.Error(), "environment reference") {
+		t.Errorf("error does not explain the problem: %v", err)
 	}
 }
 

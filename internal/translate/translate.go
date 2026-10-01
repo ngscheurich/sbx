@@ -35,6 +35,24 @@ type Translation struct {
 	Secrets []config.SecretConfig
 	// SecretNames are the declared secret names in name order.
 	SecretNames []string
+	// Tmpfs are the declared tmpfs mounts in declaration order.
+	Tmpfs []Tmpfs
+	// FsConfYAML is the generated filesystem configuration carrying the
+	// tmpfs mounts, empty when none are declared. The --tmpfs flag cannot
+	// express noexec, and msb silently drops it there, so tmpfs mounts
+	// always go through --fs-conf; msb applies config-file mounts
+	// additively alongside mount flags (verified on msb 0.7.5).
+	FsConfYAML string
+}
+
+// Tmpfs is one declared tmpfs mount.
+type Tmpfs struct {
+	// Target is an absolute guest path.
+	Target string
+	// Size is a size in msb's format, such as "512M".
+	Size string
+	// NoExec denies executing binaries from the mount.
+	NoExec bool
 }
 
 // Sandbox translates one worktree's configuration for the given execution
@@ -45,7 +63,6 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 	t := Translation{Workspace: cfg.Workspace.Target}
 
 	mounts := []msb.Mount{{Source: info.WorktreeRoot, Target: t.Workspace}}
-	var tmpfs []msb.Tmpfs
 	for i, m := range cfg.Mounts {
 		switch m.Type {
 		case "bind":
@@ -55,10 +72,15 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 			}
 			mounts = append(mounts, msb.Mount{Source: source, Target: m.Target, ReadOnly: m.ReadOnly, IsFile: isFile})
 		case "tmpfs":
-			// NoExec is rejected at configuration load, so it never
-			// reaches translation.
-			tmpfs = append(tmpfs, msb.Tmpfs{Target: m.Target, Size: m.Size})
+			t.Tmpfs = append(t.Tmpfs, Tmpfs{Target: m.Target, Size: m.Size, NoExec: m.NoExec})
 		}
+	}
+	if len(t.Tmpfs) > 0 {
+		yaml, err := FsConfYAML(t.Tmpfs)
+		if err != nil {
+			return Translation{}, err
+		}
+		t.FsConfYAML = yaml
 	}
 
 	var named []msb.NamedMount
@@ -81,7 +103,6 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 		CPUs:   cfg.CPUs,
 		Memory: cfg.Memory,
 		Mounts: mounts,
-		Tmpfs:  tmpfs,
 		Named:  named,
 		Owned:  owned,
 		Env:    sortedEnv(cfg.Env),
@@ -216,4 +237,31 @@ func sortedEnv(env map[string]string) []string {
 		out = append(out, key+"="+env[key])
 	}
 	return out
+}
+
+// FsConfYAML renders the unwrapped filesystem configuration msb loads with
+// --fs-conf: the declared tmpfs mounts as object mounts. The --tmpfs flag
+// cannot express noexec (msb 0.7.5 silently drops it there), so tmpfs
+// mounts always travel through this file, which msb applies additively
+// alongside the mount flags.
+//
+// msb expands "${NAME}" in YAML files and rejects unknown variables, so any
+// such pattern in a mount string is a translation failure: fail closed
+// rather than emit a file msb would misread.
+func FsConfYAML(tmpfs []Tmpfs) (string, error) {
+	var b strings.Builder
+	b.WriteString("mounts:\n")
+	for _, tf := range tmpfs {
+		for _, s := range []string{tf.Target, tf.Size} {
+			if strings.Contains(s, "${") {
+				return "", fmt.Errorf("tmpfs mount %q contains %q, which msb would treat as an environment reference; choose a guest path without it", tf.Target, "${")
+			}
+		}
+		fmt.Fprintf(&b, "  - tmpfs: { size: %q }\n", tf.Size)
+		fmt.Fprintf(&b, "    target: %q\n", tf.Target)
+		if tf.NoExec {
+			b.WriteString("    noexec: true\n")
+		}
+	}
+	return b.String(), nil
 }

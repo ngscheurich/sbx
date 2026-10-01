@@ -351,6 +351,7 @@ read_only = true
 type = "tmpfs"
 target = "/tmp"
 size = "512M"
+noexec = true
 
 [volumes.scratch]
 target = "/scratch"
@@ -384,7 +385,6 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 		"--memory", "2G",
 		"--mount-dir", worktree + ":/work",
 		"--mount-file", worktree + "/seed.txt:/mnt/seed.txt:ro",
-		"--tmpfs", "/tmp:512M",
 		"--mount-owned", "/scratch",
 		"--env", "MODE=test",
 		"--label", "sbx.managed=1",
@@ -397,6 +397,7 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 		"--dns-nameserver", "1.1.1.1",
 		"--dns-nameserver", "8.8.8.8",
 		"--secret-conf", "<path>",
+		"--fs-conf", "<path>",
 		"--workdir", "/work",
 		"--no-tty",
 		"--", "true",
@@ -404,8 +405,15 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 	// The --secret-conf value is a temporary path; the splice above marks
 	// it so the rest of the argv compares exactly.
 	runCall := calls[2].Args
-	if !equal(spliceSecretConf(runCall), want) {
+	if !equal(spliceGenerated(runCall), want) {
 		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
+	}
+
+	// The filesystem configuration carries the tmpfs with noexec.
+	fsConf := fake.FsConf(t, 2)
+	wantFS := "mounts:\n  - tmpfs: { size: \"512M\" }\n    target: \"/tmp\"\n    noexec: true\n"
+	if fsConf != wantFS {
+		t.Errorf("fs-conf mismatch:\n got: %q\nwant: %q", fsConf, wantFS)
 	}
 
 	// The secret map holds names and source references, never the value.
@@ -427,16 +435,18 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 	}
 }
 
-// spliceSecretConf replaces the value after --secret-conf with a
-// placeholder so the argv comparison stays exact elsewhere.
-func spliceSecretConf(args []string) []string {
-	i := indexOf(args, "--secret-conf")
-	if i < 0 {
-		return args
+// spliceGenerated replaces the value after each generated-file flag
+// (--secret-conf, --fs-conf) with a placeholder so the argv comparison
+// stays exact elsewhere.
+func spliceGenerated(args []string) []string {
+	for _, flag := range []string{"--secret-conf", "--fs-conf"} {
+		i := indexOf(args, flag)
+		if i >= 0 {
+			tail := append([]string{}, args[i+2:]...)
+			args = append(append(args[:i+1:i+1], "<path>"), tail...)
+		}
 	}
-	out := append([]string{}, args[:i+1]...)
-	out = append(out, "<path>")
-	return append(out, args[i+2:]...)
+	return args
 }
 
 // indexOf returns the index of the first occurrence of token, or -1.

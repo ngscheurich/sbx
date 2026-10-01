@@ -129,3 +129,18 @@ executed normally. Per the fail-closed posture, sbx now rejects
 `noexec = true` at configuration load with a not-supported-yet error,
 `msb.Tmpfs` loses the field, and the pinned argv tests drop the suffix.
 The spec's unverified list narrows to `:ro` on `--mount-dir`.
+
+## Comments (addendum 7)
+
+The owner's real-host probes resolved the noexec question without
+dropping the option: msb 0.7.5 honors `noexec` through the `--fs-conf`
+object-mount path (`rw,noexec,relatime,size=524288k`), and a second
+probe confirmed mount flags and config-file mounts apply additively in
+one sandbox (a `--mount-file` bind and an fs-conf tmpfs both appeared).
+sbx therefore translates tmpfs mounts through a generated `--fs-conf`
+file — written outside the repository, removed after the run, like the
+secret map — and `noexec = true` is supported again; the interim
+rejection is reverted. Any `${` pattern in a generated mount string
+fails translation, since msb expands `${NAME}` in YAML files. The
+spec's translation and backend-verification sections record both
+observations; the unverified list is now just `:ro` on `--mount-dir`.
