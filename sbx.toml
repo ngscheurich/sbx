@@ -1,0 +1,7 @@
+image = "sbx-dev"
+cpus = 1
+memory = "512M"
+shell = "/bin/bash"
+
+[network]
+egress = "public"
