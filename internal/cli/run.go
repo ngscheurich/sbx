@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -121,6 +122,7 @@ func preflight(cfg config.Config) error {
 			project = append(project, name)
 		}
 	}
+	sort.Strings(project)
 	if len(project) > 0 {
 		return fmt.Errorf("project volumes (%s) are declared but their compatibility checks are not implemented yet; remove them or wait for the next sbx release", strings.Join(project, ", "))
 	}
