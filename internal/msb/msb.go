@@ -73,7 +73,7 @@ func (c CLI) run(ctx context.Context, args ...string) (string, error) {
 		if detail == "" {
 			detail = err.Error()
 		}
-		return out.String(), fmt.Errorf("msb %s: %s", args[0], firstLine(detail))
+		return out.String(), fmt.Errorf("msb %s: %s", strings.Join(args[:min(2, len(args))], " "), firstLine(detail))
 	}
 	return out.String(), nil
 }
