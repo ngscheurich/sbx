@@ -3,6 +3,9 @@
 package gitx
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -20,19 +23,22 @@ type Info struct {
 
 // Discover resolves the worktree root and common Git directory for the
 // directory at dir. It fails with an actionable error when dir is not inside
-// a Git worktree.
-func Discover(dir string) (Info, error) {
+// a Git worktree, and with a distinct error when git itself cannot be run.
+func Discover(ctx context.Context, dir string) (Info, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return Info{}, fmt.Errorf("resolving %s: %w", dir, err)
 	}
 
-	toplevel, err := gitIn(abs, "rev-parse", "--show-toplevel")
+	toplevel, err := gitIn(ctx, abs, "rev-parse", "--show-toplevel")
 	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return Info{}, err
+		}
 		return Info{}, fmt.Errorf("sbx must run inside a Git worktree, but %s is not inside one (%v)", abs, err)
 	}
 
-	commonDir, err := gitIn(abs, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	commonDir, err := gitIn(ctx, abs, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return Info{}, fmt.Errorf("finding the common Git directory for %s: %w", abs, err)
 	}
@@ -52,14 +58,24 @@ func Discover(dir string) (Info, error) {
 	return info, nil
 }
 
-func gitIn(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+// gitIn runs one git command in dir and returns its standard output. The
+// streams are kept separate: the parsed answer comes from stdout alone, so a
+// warning git prints to stderr (ownership advisories, config warnings) can
+// never be mistaken for the answer, and stderr's first line serves the error
+// path. A missing git executable is reported as such, not mistaken for a
+// failed rev-parse.
+func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), firstLine(string(out)))
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return "", fmt.Errorf("git is not installed or not on PATH: %w", err)
+		}
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), firstLine(errOut.String()))
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(out.String()), nil
 }
 
 // firstLine returns the first non-empty line of a command's output.

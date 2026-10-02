@@ -55,7 +55,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			fmt.Fprintf(stderr, "sbx: plan takes no arguments or flags yet, got %q\n", strings.Join(args[1:], " "))
 			return exitUsage
 		}
-		return runPlan(stdout, stderr)
+		return runPlan(ctx, stdout, stderr)
 	case "run":
 		return runDisposable(ctx, args, stdin, stdout, stderr)
 	case "-V", "--version", "version":
@@ -67,8 +67,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 }
 
-func runPlan(stdout, stderr io.Writer) int {
-	info, cfg, err := discoverConfig()
+func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
+	info, cfg, err := discoverConfig(ctx)
 	if err != nil {
 		fmt.Fprintf(stderr, "sbx: %v\n", err)
 		return exitFailure
@@ -80,8 +80,8 @@ func runPlan(stdout, stderr io.Writer) int {
 
 // discoverConfig finds the worktree root from the current directory and
 // loads that checkout's validated sbx.toml.
-func discoverConfig() (gitx.Info, config.Config, error) {
-	info, err := gitx.Discover(".")
+func discoverConfig(ctx context.Context) (gitx.Info, config.Config, error) {
+	info, err := gitx.Discover(ctx, ".")
 	if err != nil {
 		return gitx.Info{}, config.Config{}, err
 	}

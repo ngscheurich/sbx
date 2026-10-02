@@ -43,7 +43,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return exitFailure
 	}
 
-	info, cfg, err := discoverConfig()
+	info, cfg, err := discoverConfig(ctx)
 	if err != nil {
 		return fatal(err)
 	}

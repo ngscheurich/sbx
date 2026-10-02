@@ -1,6 +1,7 @@
 package gitx
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +52,7 @@ func TestDiscoverInWorktreeRoot(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "wt1")
 	addWorktree(t, repo, wt)
 
-	info, err := Discover(wt)
+	info, err := Discover(context.Background(), wt)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestDiscoverFromNestedDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err := Discover(nested)
+	info, err := Discover(context.Background(), nested)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestDiscoverSymlinkFreePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err := Discover(filepath.Join(link, "wt1"))
+	info, err := Discover(context.Background(), filepath.Join(link, "wt1"))
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestDiscoverSymlinkFreePaths(t *testing.T) {
 }
 
 func TestDiscoverOutsideGit(t *testing.T) {
-	_, err := Discover(t.TempDir())
+	_, err := Discover(context.Background(), t.TempDir())
 	if err == nil {
 		t.Fatal("Discover succeeded outside a Git repository")
 	}
@@ -117,7 +118,7 @@ func TestDiscoverOutsideGit(t *testing.T) {
 
 func TestDiscoverInsideDotGitDirectory(t *testing.T) {
 	repo := initRepo(t)
-	_, err := Discover(filepath.Join(repo, ".git"))
+	_, err := Discover(context.Background(), filepath.Join(repo, ".git"))
 	if err == nil {
 		t.Fatal("Discover succeeded inside the .git directory")
 	}
@@ -131,7 +132,7 @@ func TestDiscoverBareRepoNamedDotGit(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "wt1")
 	mustGit(t, bare, "worktree", "add", wt, "-b", "feature")
 
-	info, err := Discover(wt)
+	info, err := Discover(context.Background(), wt)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
