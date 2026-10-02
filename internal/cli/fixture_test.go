@@ -190,7 +190,6 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 		"--net-rule", "allow@proxy.golang.org",
 		"--net-rule", "allow@sum.golang.org",
 		"--net-rule", "allow@example.com",
-		"--net-default-egress", "deny",
 		"--tls-intercept",
 		"--dns-nameserver", "1.1.1.1",
 		"--dns-nameserver", "8.8.8.8",

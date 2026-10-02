@@ -251,7 +251,7 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 // SOURCE:DEST[:OPTIONS] and --mount-file SOURCE:DEST[:OPTIONS], --tmpfs
 // PATH:SIZE[:OPTIONS], --mount-named NAME:DEST, --mount-owned
 // DEST[:OPTIONS], -e KEY=value, --net-rule allow@<target>,
-// --net-default-egress, --tls-intercept, --secret-conf PATH.
+// --tls-intercept, --secret-conf PATH.
 func CreateArgs(o CreateOptions) []string {
 	var args []string
 	if o.Name != "" {
@@ -290,13 +290,10 @@ func CreateArgs(o CreateOptions) []string {
 	for _, l := range o.Labels {
 		args = append(args, "--label", l.Key+"="+l.Value)
 	}
+	// With rules present msb's egress default is deny, which is exactly the
+	// allowlist policy; no default-egress flag is emitted.
 	for _, rule := range o.NetRules {
 		args = append(args, "--net-rule", rule)
-	}
-	if len(o.NetRules) > 0 {
-		// With rules present msb's egress default is already deny; stating it
-		// keeps the allowlist policy explicit rather than incidental.
-		args = append(args, "--net-default-egress", "deny")
 	}
 	if o.TLSIntercept {
 		args = append(args, "--tls-intercept")

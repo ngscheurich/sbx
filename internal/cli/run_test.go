@@ -392,7 +392,6 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 		"--label", "sbx.worktree=" + worktree,
 		"--net-rule", "allow@example.com",
 		"--net-rule", "allow@*.example.org",
-		"--net-default-egress", "deny",
 		"--tls-intercept",
 		"--dns-nameserver", "1.1.1.1",
 		"--dns-nameserver", "8.8.8.8",

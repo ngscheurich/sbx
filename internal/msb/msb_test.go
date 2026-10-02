@@ -500,7 +500,6 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		"--label", "sbx.managed=1",
 		"--net-rule", "allow@example.com",
 		"--net-rule", "allow@*.example.org",
-		"--net-default-egress", "deny",
 		"--tls-intercept",
 		"--dns-nameserver", "1.1.1.1",
 		"--dns-nameserver", "8.8.8.8",
