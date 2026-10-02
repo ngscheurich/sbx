@@ -78,9 +78,10 @@ func (c CLI) run(ctx context.Context, args ...string) (string, error) {
 	return out.String(), nil
 }
 
-// Context is the effective msb backend selection.
+// Context is the effective msb backend selection. parseContext builds the
+// value by hand, so the struct carries no json tags.
 type Context struct {
-	Backend string `json:"backend"`
+	Backend string
 }
 
 // LocalContext confirms the effective backend selection under a forced
