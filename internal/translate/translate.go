@@ -182,20 +182,28 @@ func SecretConfYAML(secrets map[string]config.SecretConfig, names []string) stri
 	return b.String()
 }
 
-// resolveBindSource resolves a bind source to an absolute host path:
-// absolute as-is, "~/..." against the caller's home directory, and anything
-// else against the worktree root. A missing source is an error. It also
-// reports whether the source is a regular file, which selects msb's
-// --mount-file over --mount-dir.
+// resolveBindSource resolves a bind source to an absolute host path.
+// sbx has no interpolation language: a leading "~" expands against the
+// caller's home directory ("~" exactly or "~/..." only), absolute paths
+// pass as-is, and anything else resolves against the worktree root. Any
+// "$" in the source is a rejected host-environment reference, and "~user"
+// forms are rejected rather than misread as home-relative. A missing source
+// is an error. It also reports whether the source is a regular file, which
+// selects msb's --mount-file over --mount-dir.
 func resolveBindSource(worktreeRoot, source string) (string, bool, error) {
+	if strings.Contains(source, "$") {
+		return "", false, fmt.Errorf("bind source %q contains %q: sbx has no interpolation language; use an absolute, worktree-relative, or ~-prefixed path", source, "$")
+	}
 	var resolved string
 	switch {
-	case strings.HasPrefix(source, "~"):
+	case source == "~" || strings.HasPrefix(source, "~/"):
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", false, fmt.Errorf("expanding %q: %w", source, err)
 		}
 		resolved = filepath.Join(home, strings.TrimPrefix(source, "~"))
+	case strings.HasPrefix(source, "~"):
+		return "", false, fmt.Errorf("bind source %q: ~user expansion is not supported; use an absolute path instead", source)
 	case filepath.IsAbs(source):
 		resolved = source
 	default:

@@ -236,6 +236,40 @@ egress = "public"
 	}
 }
 
+// TestSandboxRejectsInterpolatedBindSources pins the fail-closed rule: sbx
+// has no interpolation language, so "$" references and "~user" forms in a
+// bind source are errors, never silent expansions.
+func TestSandboxRejectsInterpolatedBindSources(t *testing.T) {
+	t.Setenv("OUTSIDE", "/etc")
+	for _, source := range []string{
+		"${OUTSIDE}",
+		"$OUTSIDE",
+		"./dir${UNSET_VAR}",
+		"./cach$1e",
+		"~bob/notes",
+	} {
+		root := t.TempDir()
+		cfg := load(t, `
+image = "alpine:3.20"
+cpus = 1
+memory = "1G"
+
+[[mounts]]
+type = "bind"
+source = "`+source+`"
+target = "/mnt"
+
+[network]
+egress = "public"
+`)
+		if _, err := Sandbox(info(root), cfg, "disposable"); err == nil {
+			t.Errorf("Sandbox accepted bind source %q", source)
+		} else if !strings.Contains(err.Error(), source) {
+			t.Errorf("error for %q does not name the source: %v", source, err)
+		}
+	}
+}
+
 func TestSandboxTmpfsAndOwnedVolumes(t *testing.T) {
 	root := t.TempDir()
 	cfg := load(t, `
