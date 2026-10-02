@@ -1,7 +1,36 @@
 image = "sbx-dev"
-cpus = 1
-memory = "512M"
+cpus = 2
+memory = "2G"
 shell = "/bin/bash"
+
+[[mounts]]
+type = "bind"
+source = "~/.agents"
+target = "/root/.agents"
+read_only = true
+
+[[mounts]]
+type = "bind"
+source = "~/AGENTS.md"
+target = "/root/AGENTS.md"
+read_only = true
+
+[[mounts]]
+type = "bind"
+source = "~/.pi/agent/auth.json"
+target = "/root/.pi/agent/auth.json"
+read_only = true
+
+[[mounts]]
+type = "bind"
+source = "~/.pi/agent/settings.json"
+target = "/root/.pi/agent/settings.json"
+read_only = true
+
+[[mounts]]
+type = "bind"
+source = "~/.pi/agent/sessions"
+target = "/root/.pi/agent/sessions"
 
 [network]
 egress = "public"

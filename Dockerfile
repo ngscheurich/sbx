@@ -1,5 +1,8 @@
 FROM debian:unstable-slim
 
+ARG MISE_VERSION=2026.9.18
+ARG PI_VERSION=1.0.0
+
 ENV LANG=C.UTF-8
 
 # Install system dependencies
@@ -15,7 +18,7 @@ RUN curl -fsSL https://install.microsandbox.dev | sh
 ENV PATH="/root/.local/bin:/root/.local/share/mise/shims:${PATH}" \
     MISE_TRUSTED_CONFIG_PATHS="/workspace"
 RUN set -eux; \
-    curl -fsSL https://mise.run | MISE_VERSION=2026.9.6 sh; \
+    curl -fsSL https://mise.run | MISE_VERSION="$MISE_VERSION" sh; \
     mise --version && \
     echo 'eval "$(mise activate bash)"' >> ~/.bashrc
 
@@ -28,8 +31,11 @@ RUN set -eux; \
 
 # Install Pi coding agent
 RUN set -eux; \
-    npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.99.2; \
-    pi --version; \
+    npm install -g --ignore-scripts @earendil-works/pi-coding-agent@"$PI_VERSION"; \
+    pi --version
+
+RUN set -eux; \
+    pi install npm:@tintinweb/pi-subagents; \
     npm cache clean --force
 
 CMD ["bash"]
