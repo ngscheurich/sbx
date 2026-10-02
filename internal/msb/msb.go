@@ -336,7 +336,11 @@ func (c CLI) Run(ctx context.Context, o RunOptions, stdin io.Reader, stdout, std
 	if o.Workdir != "" {
 		args = append(args, "--workdir", o.Workdir)
 	}
-	if stdinIsTerminal(stdin) {
+	// --tty is only appropriate when both sides of the session are
+	// terminals: with terminal stdin but piped stdout (sbx run -- cmd |
+	// tee log) a PTY would mangle the piped bytes with echo and CRLF
+	// translation.
+	if stdinIsTerminal(stdin) && isTerminal(stdout) {
 		args = append(args, "--tty")
 	} else {
 		args = append(args, "--no-tty")
@@ -351,9 +355,11 @@ func (c CLI) Run(ctx context.Context, o RunOptions, stdin io.Reader, stdout, std
 // actually is: a terminal gets --tty (interactive session with echo and
 // line editing), anything else gets --stream for byte-faithful piping —
 // msb 0.7.3 rejects --stream on terminal stdin and keeps the two modes
-// exclusive. Signals are delivered to the msb subprocess's process group;
-// whether msb forwards them into the guest is UNVERIFIED (ticket 01), so
-// the interim behavior is not relied upon.
+// exclusive. Terminal stdin therefore forces --tty even when stdout is
+// redirected, mangling the piped bytes; whether a newer msb accepts
+// --stream with terminal stdin is UNVERIFIED. Signals are delivered to the
+// msb subprocess's process group; whether msb forwards them into the guest
+// is UNVERIFIED, so the interim behavior is not relied upon.
 func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	args := []string{"exec", name}
 	if workdir != "" {
@@ -459,6 +465,16 @@ func (c CLI) PullIfMissing(ctx context.Context, image string) error {
 // that never hand over a file — counts as a pipe.
 func stdinIsTerminal(stdin io.Reader) bool {
 	f, ok := stdin.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(int(f.Fd()))
+}
+
+// isTerminal reports whether the writer is an interactive terminal, with the
+// same *os.File rule as stdinIsTerminal.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
 	if !ok {
 		return false
 	}
