@@ -80,9 +80,9 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 	}
 }
 
-// worktreeOf recovers the worktree root from the fixture: the fake's create
-// call carries it as the --mount source and sbx.worktree label. It reads the
-// sbx.worktree label value from the recorded create call.
+// worktreeOf recovers the worktree root from the fixture: disposable-run
+// tests record no create call, so it reads the sbx.worktree label from any
+// recorded call (the run call carries it).
 func worktreeOf(t *testing.T, fake testsupport.Log) string {
 	t.Helper()
 	for _, call := range fake.Calls() {

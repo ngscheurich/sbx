@@ -90,9 +90,9 @@ const fixtureRestrictedDir = "../../fixtures/restricted-cli"
 
 // TestFixtureRestrictedFailsClosedVerbatim copies the complete fixture and
 // checks that `sbx run` refuses it before any backend call: [build] is not
-// supported yet (ticket 09) and its Project volumes have no compatibility
-// checks yet (ticket 05). Fail-closed is the contract; which gate fires
-// first may change as tickets land.
+// supported yet and its Project volumes have no compatibility checks yet.
+// Fail-closed is the contract; which gate fires first may change as those
+// features land.
 func TestFixtureRestrictedFailsClosedVerbatim(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
@@ -157,8 +157,9 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// The executable variant is the fixture minus [build] (ticket 09) and
-	// the Project volumes (ticket 05), derived from the fixture file.
+	// The executable variant is the fixture minus [build] and the Project
+	// volumes, which this build does not support yet; derived from the
+	// fixture file.
 	variant := testsupport.FixtureTOML(t,
 		filepath.Join(fixtureRestrictedDir, "sbx.toml"),
 		"[build]", "[volumes.go_mod]", "[volumes.go_build]")

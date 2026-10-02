@@ -9,6 +9,11 @@
 // Flag spellings and output schemas follow the observed msb 0.7.3 behavior
 // recorded in the spec's backend verification; behaviors not yet confirmed
 // on a real host are marked UNVERIFIED.
+//
+// Create, Exec, and Remove have no production caller yet: only plan and run
+// are wired into the CLI. They are the deliberately test-pinned seam for the
+// persistent-sandbox commands (up, exec, rm) and land with those commands in
+// later releases; until then their pinned argv is what tests keep honest.
 package msb
 
 import (
@@ -266,7 +271,7 @@ func CreateArgs(o CreateOptions) []string {
 		spec := m.Source + ":" + m.Target
 		if m.ReadOnly {
 			// :ro verified on a real host for both --mount-file and
-			// --mount-dir (ticket 04).
+			// --mount-dir.
 			spec += ":ro"
 		}
 		flag := "--mount-dir"
@@ -383,7 +388,7 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 // process group (a background group's tty setup is stopped by SIGTTOU, and
 // terminal signals reach msb directly); with piped stdin it gets its own
 // group so cancellation reaches the subprocess and its children. Whether
-// msb forwards signals into the guest is UNVERIFIED (ticket 01).
+// msb forwards signals into the guest is UNVERIFIED.
 func (c CLI) runChild(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	tty := stdinIsTerminal(stdin)
 

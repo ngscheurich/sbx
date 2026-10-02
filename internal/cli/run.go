@@ -1,6 +1,3 @@
-// Disposable runs: `sbx run` creates a uniquely named sandbox, runs one
-// guest command in it, and removes the sandbox on success, failure, or
-// cancellation. It publishes no ports and keeps no state to repair.
 package cli
 
 import (
@@ -18,7 +15,15 @@ import (
 	"github.com/ngscheurich/sbx/internal/translate"
 )
 
-// runDisposable implements `sbx run [-- <argv...>]`.
+// runDisposable implements `sbx run [-- <argv...>]`. A disposable run is one
+// `msb run` subprocess: sbx passes no --name, so msb owns the sandbox's
+// naming and its whole lifecycle, and sbx adds no cleanup step. It publishes
+// no ports and keeps no state to repair.
+//
+// Interruptions cancel ctx, which box.Run forwards to the msb subprocess.
+// Whether the signal then reaches the guest itself is UNVERIFIED on a real
+// host; this interim implementation must not be treated as verified signal
+// forwarding.
 func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var argv []string
 	switch {
@@ -31,10 +36,6 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return exitUsage
 	}
 
-	// Interruptions cancel ctx, which msb.Exec forwards to the msb
-	// subprocess. Whether the signal then reaches the guest itself is
-	// UNVERIFIED on a real host (ticket 01); this interim implementation
-	// must not be treated as verified signal forwarding.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -113,8 +114,8 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 
 // preflight rejects declared settings this build cannot honor before any
 // backend mutation. Project volumes are translated but their compatibility
-// checks do not exist yet, so declaring one fails closed (ticket 05 adds
-// the checks).
+// checks do not exist yet, so declaring one fails closed until a later
+// release adds them.
 func preflight(cfg config.Config) error {
 	var project []string
 	for name, v := range cfg.Volumes {
