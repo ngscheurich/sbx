@@ -481,7 +481,7 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		Labels:         []Label{{Key: "sbx.managed", Value: "1"}},
 		NetRules:       []string{"allow@example.com", "allow@*.example.org"},
 		TLSIntercept:   true,
-		DnsNameservers: []string{"1.1.1.1", "8.8.8.8"},
+		DNSNameservers: []string{"1.1.1.1", "8.8.8.8"},
 		SecretConf:     "/tmp/secrets.yaml",
 		FsConf:         "/tmp/fs-conf.yaml",
 	})

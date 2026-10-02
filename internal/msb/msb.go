@@ -214,8 +214,8 @@ type CreateOptions struct {
 	Labels []Label
 	// NetRules are --net-rule tokens, such as "allow@example.com".
 	NetRules []string
-	// DnsNameservers are passed as repeatable --dns-nameserver flags.
-	DnsNameservers []string
+	// DNSNameservers are passed as repeatable --dns-nameserver flags.
+	DNSNameservers []string
 	// TLSIntercept turns on msb's TLS inspection, which allowlist egress and
 	// declared secrets require.
 	TLSIntercept bool
@@ -301,7 +301,7 @@ func CreateArgs(o CreateOptions) []string {
 	if o.TLSIntercept {
 		args = append(args, "--tls-intercept")
 	}
-	for _, ns := range o.DnsNameservers {
+	for _, ns := range o.DNSNameservers {
 		args = append(args, "--dns-nameserver", ns)
 	}
 	if o.NoNet {

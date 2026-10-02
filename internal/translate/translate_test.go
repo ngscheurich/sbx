@@ -131,8 +131,8 @@ func TestSandboxTranslatesRestrictedFixture(t *testing.T) {
 			t.Errorf("NetRules[%d] = %q, want %q", i, o.NetRules[i], r)
 		}
 	}
-	if got := o.DnsNameservers; len(got) != 2 || got[0] != "1.1.1.1" || got[1] != "8.8.8.8" {
-		t.Errorf("DnsNameservers = %v", got)
+	if got := o.DNSNameservers; len(got) != 2 || got[0] != "1.1.1.1" || got[1] != "8.8.8.8" {
+		t.Errorf("DNSNameservers = %v", got)
 	}
 	if len(o.Env) != 0 {
 		t.Errorf("Env = %v, want none", o.Env)

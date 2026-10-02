@@ -98,7 +98,7 @@ type SecretConfig struct {
 type NetworkConfig struct {
 	Egress         string   `toml:"egress"`
 	Allow          []string `toml:"allow"`
-	DnsNameservers []string `toml:"dns_nameservers"`
+	DNSNameservers []string `toml:"dns_nameservers"`
 }
 
 // Load parses and validates the sbx.toml at path.
@@ -344,11 +344,11 @@ func (n *NetworkConfig) validate() []string {
 		}
 	}
 	if n.Egress == "none" {
-		if len(n.DnsNameservers) > 0 {
+		if len(n.DNSNameservers) > 0 {
 			problems = append(problems, `network: dns_nameservers is invalid with egress = "none", which allows no traffic at all`)
 		}
 	}
-	for _, ns := range n.DnsNameservers {
+	for _, ns := range n.DNSNameservers {
 		if !nameserverValid(ns) {
 			problems = append(problems, fmt.Sprintf("network: dns_nameservers entry %q is not an IP address or IP:PORT", ns))
 		}

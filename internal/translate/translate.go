@@ -123,7 +123,7 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 		// rules can only see the request authority of intercepted HTTPS.
 		options.TLSIntercept = true
 	}
-	options.DnsNameservers = cfg.Network.DnsNameservers
+	options.DNSNameservers = cfg.Network.DNSNameservers
 	// Any declared secret also turns on TLS inspection; msb does this
 	// itself when a secret is declared, so no extra flag is needed here.
 

@@ -178,8 +178,8 @@ func describeNetwork(n config.NetworkConfig, o msb.CreateOptions) string {
 	default:
 		parts = append(parts, "egress public")
 	}
-	if len(n.DnsNameservers) > 0 {
-		parts = append(parts, "dns "+strings.Join(n.DnsNameservers, ", "))
+	if len(n.DNSNameservers) > 0 {
+		parts = append(parts, "dns "+strings.Join(n.DNSNameservers, ", "))
 	}
 	return strings.Join(parts, ", ")
 }

@@ -388,8 +388,8 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 	if s.FromEnv != "SBX_FIXTURE_TOKEN" || len(s.Allow) != 1 || s.Allow[0] != "example.com" {
 		t.Errorf("secret = %+v", s)
 	}
-	if len(cfg.Network.DnsNameservers) != 2 {
-		t.Errorf("DnsNameservers = %v", cfg.Network.DnsNameservers)
+	if len(cfg.Network.DNSNameservers) != 2 {
+		t.Errorf("DNSNameservers = %v", cfg.Network.DNSNameservers)
 	}
 }
 
