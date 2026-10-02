@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ngscheurich/sbx/internal/gitx"
+	"github.com/ngscheurich/sbx/internal/identity"
 )
 
 // fixtureRepo creates a temporary Git repository with a linked worktree
@@ -24,7 +27,9 @@ func fixtureRepo(t *testing.T, toml string) (worktree, repo string) {
 
 	worktree = filepath.Join(t.TempDir(), "wt1")
 	git(t, repo, "worktree", "add", worktree, "-b", "feature")
-	os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(toml), 0o644)
+	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return worktree, repo
 }
 
@@ -111,9 +116,13 @@ func TestPlanFromNestedDirectory(t *testing.T) {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
 	}
 	out := stdout.String()
-	identity := filepath.Base(worktree)
-	if !strings.Contains(out, "sbx identity:") && !strings.Contains(out, identity) {
-		t.Errorf("plan output lacks the worktree identity %q:\n%s", identity, out)
+	info, err := gitx.Discover(context.Background(), nested)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	want := identity.Derive(info.CommonDir, info.WorktreeRoot).Sandbox
+	if !strings.Contains(out, "sandbox identity: "+want) {
+		t.Errorf("plan output lacks the sandbox identity %q:\n%s", want, out)
 	}
 	if !strings.Contains(out, "alpine:3.20") {
 		t.Errorf("plan output lacks the configured image:\n%s", out)
@@ -209,14 +218,16 @@ func TestIdentityStableAcrossConfigEditsAndBranchSwitches(t *testing.T) {
 	first := planIdentity(t, worktree)
 
 	// Edit the configuration.
-	os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(`
 image = "debian:12"
 cpus = 4
 memory = "8G"
 
 [network]
 egress = "none"
-`), 0o644)
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if second := planIdentity(t, worktree); second != first {
 		t.Errorf("identity changed after a config edit: %q -> %q", first, second)
 	}
@@ -265,7 +276,9 @@ func seedWorktree(t *testing.T, repo, path string) {
 	git(t, repo, "add", "seed.txt")
 	git(t, repo, "commit", "-m", "seed")
 	git(t, repo, "worktree", "add", path, "-b", "feature")
-	os.WriteFile(filepath.Join(path, "sbx.toml"), []byte(validTOML), 0o644)
+	if err := os.WriteFile(filepath.Join(path, "sbx.toml"), []byte(validTOML), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // planIdentity runs sbx plan and extracts the sandbox identity from output.
