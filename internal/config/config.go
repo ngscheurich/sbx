@@ -4,9 +4,11 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -167,7 +169,9 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Image) == "" {
 		problems = append(problems, "image: required, an OCI image reference")
 	}
-	if c.CPUs <= 0 {
+	if math.IsNaN(c.CPUs) || math.IsInf(c.CPUs, 0) {
+		problems = append(problems, "cpus: must be a finite number of CPU cores")
+	} else if c.CPUs <= 0 {
 		problems = append(problems, "cpus: required, a positive number of CPU cores")
 	}
 	if !sizeRe.MatchString(c.Memory) {
@@ -176,6 +180,7 @@ func (c *Config) Validate() error {
 	problems = append(problems, c.validateWorkspace()...)
 	problems = append(problems, c.validateMounts()...)
 	problems = append(problems, c.validateVolumes()...)
+	problems = append(problems, c.validateMountPointConflicts()...)
 	problems = append(problems, c.validateEnv()...)
 	problems = append(problems, c.validateSecrets()...)
 	problems = append(problems, c.Network.validate()...)
@@ -192,7 +197,20 @@ func (c *Config) validateWorkspace() []string {
 	if !strings.HasPrefix(c.Workspace.Target, "/") {
 		return []string{fmt.Sprintf("workspace: target %q must be an absolute guest path", c.Workspace.Target)}
 	}
+	if p := envRefProblem("workspace", c.Workspace.Target); p != "" {
+		return []string{p}
+	}
 	return nil
+}
+
+// envRefProblem rejects "${" in a guest mount target: msb expands "${NAME}"
+// references, so a target containing one could silently mount somewhere other
+// than declared. Fail closed, mirroring the generated-YAML check.
+func envRefProblem(where, target string) string {
+	if strings.Contains(target, "${") {
+		return fmt.Sprintf("%s: target %q contains %q, which msb would treat as an environment reference; choose a guest path without it", where, target, "${")
+	}
+	return ""
 }
 
 // validateMounts checks each mount's shape and rejects duplicate targets,
@@ -227,6 +245,8 @@ func (c *Config) validateMounts() []string {
 		}
 		if !strings.HasPrefix(m.Target, "/") {
 			problems = append(problems, fmt.Sprintf("%s: target %q must be an absolute guest path", where, m.Target))
+		} else if p := envRefProblem(where, m.Target); p != "" {
+			problems = append(problems, p)
 		}
 		if m.Type == "bind" && m.Size != "" {
 			problems = append(problems, where+": bind mounts take no size; size belongs to tmpfs mounts")
@@ -235,6 +255,41 @@ func (c *Config) validateMounts() []string {
 			problems = append(problems, fmt.Sprintf("%s: duplicate mount target %q (already used by %s)", where, m.Target, prior))
 		} else {
 			seen[m.Target] = where
+		}
+	}
+	return problems
+}
+
+// validateMountPointConflicts rejects duplicate targets across every kind of
+// guest mount point: the Workspace target, mount targets, and volume targets
+// all occupy guest paths, and overlapping mounts have undefined behavior in
+// msb, so the conflict must surface here rather than after resource changes.
+// Volume names iterate in sorted order for deterministic messages.
+func (c *Config) validateMountPointConflicts() []string {
+	var problems []string
+	seen := map[string]string{}
+	if c.Workspace.Target != "" {
+		seen[c.Workspace.Target] = "the workspace"
+	}
+	for i, m := range c.Mounts {
+		if strings.HasPrefix(m.Target, "/") {
+			seen[m.Target] = fmt.Sprintf("mounts[%d]", i)
+		}
+	}
+	names := make([]string, 0, len(c.Volumes))
+	for name := range c.Volumes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		target := c.Volumes[name].Target
+		if !strings.HasPrefix(target, "/") {
+			continue
+		}
+		if prior, dup := seen[target]; dup {
+			problems = append(problems, fmt.Sprintf("volumes.%s: duplicate mount target %q (already used by %s)", name, target, prior))
+		} else {
+			seen[target] = "volumes." + name
 		}
 	}
 	return problems
@@ -262,6 +317,8 @@ func (c *Config) validateVolumes() []string {
 		}
 		if !strings.HasPrefix(v.Target, "/") {
 			problems = append(problems, fmt.Sprintf("volumes.%s: target %q must be an absolute guest path", name, v.Target))
+		} else if p := envRefProblem("volumes."+name, v.Target); p != "" {
+			problems = append(problems, p)
 		}
 		switch {
 		case kind == "disk" && !sizeRe.MatchString(v.Size):
@@ -294,6 +351,9 @@ func (c *Config) validateEnv() []string {
 func (c *Config) validateSecrets() []string {
 	var problems []string
 	for name, s := range c.Secrets {
+		if _, clash := c.Env[name]; clash {
+			problems = append(problems, fmt.Sprintf("secrets.%s: conflicts with [env] %s; both define the guest variable %s", name, name, name))
+		}
 		if !envNameRe.MatchString(name) {
 			problems = append(problems, fmt.Sprintf("secrets: name %q must match [A-Za-z_][A-Za-z0-9_]*", name))
 		}
@@ -314,8 +374,9 @@ func (c *Config) validateSecrets() []string {
 	return problems
 }
 
-// sizeRe matches msb's size format: an integer with a K, M, or G suffix.
-var sizeRe = regexp.MustCompile(`^[0-9]+[KMG]$`)
+// sizeRe matches msb's size format: a nonzero integer without leading zeros,
+// with a K, M, or G suffix.
+var sizeRe = regexp.MustCompile(`^[1-9][0-9]*[KMG]$`)
 
 // volumeNameRe matches volume and port names.
 var volumeNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)

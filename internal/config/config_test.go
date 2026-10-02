@@ -105,6 +105,97 @@ memory = "1G"
 [network]
 egress = "public"
 `, `cpus`},
+		{"nan cpus", `
+image = "alpine"
+cpus = nan
+memory = "1G"
+[network]
+egress = "public"
+`, `cpus`},
+		{"infinite cpus", `
+image = "alpine"
+cpus = inf
+memory = "1G"
+[network]
+egress = "public"
+`, `cpus`},
+		{"zero memory", `
+image = "alpine"
+cpus = 1
+memory = "0G"
+[network]
+egress = "public"
+`, `memory`},
+		{"duplicate volume targets", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+[volumes.a]
+target = "/data"
+scope = "sandbox"
+[volumes.b]
+target = "/data"
+scope = "sandbox"
+[network]
+egress = "public"
+`, `duplicate mount target`},
+		{"volume target collides with workspace", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+[volumes.data]
+target = "/workspace"
+scope = "sandbox"
+[network]
+egress = "public"
+`, `duplicate mount target`},
+		{"volume target collides with a mount", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+[[mounts]]
+type = "bind"
+source = "./x"
+target = "/mnt/x"
+[volumes.data]
+target = "/mnt/x"
+scope = "sandbox"
+[network]
+egress = "public"
+`, `duplicate mount target`},
+		{"env reference in bind target", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+[[mounts]]
+type = "bind"
+source = "./x"
+target = "/mnt/x${y}"
+[network]
+egress = "public"
+`, `environment reference`},
+		{"env reference in volume target", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+[volumes.data]
+target = "/var/lib/${x}"
+scope = "sandbox"
+[network]
+egress = "public"
+`, `environment reference`},
+		{"secret name collides with env", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+[env]
+FOO = "bar"
+[secrets.FOO]
+from_env = "HOST_FOO"
+allow = ["example.com"]
+[network]
+egress = "public"
+`, `conflicts`},
 		{"missing memory", `
 image = "alpine"
 cpus = 1
