@@ -53,9 +53,16 @@ func Compose(info gitx.Info, cfg config.Config) Plan {
 		p.TranslateErr = err
 		return p
 	}
+	// The preview is of the persistent creation, which always names its
+	// sandbox; the disposable run is the path that omits --name.
+	tr.Options.Name = id.Sandbox
 	// The generated files' paths are chosen when a sandbox is created; the
-	// Plan shows the maps' content and placeholders instead.
-	tr.Options.SecretConf = secretConfPlaceholder
+	// Plan shows the maps' content and placeholders instead. Each placeholder
+	// appears only when its file would actually be generated, so the rendered
+	// arguments match what msb create would receive.
+	if tr.SecretConfYAML != "" {
+		tr.Options.SecretConf = secretConfPlaceholder
+	}
 	if tr.FsConfYAML != "" {
 		tr.Options.FsConf = fsConfPlaceholder
 	}
@@ -90,7 +97,7 @@ func (p Plan) Render() string {
 	c := p.Config
 	fmt.Fprintf(&b, "\nconfiguration (sbx.toml):\n")
 	fmt.Fprintf(&b, "  image:   %s\n", c.Image)
-	fmt.Fprintf(&b, "  cpus:    %s\n", formatCPUs(c.CPUs))
+	fmt.Fprintf(&b, "  cpus:    %s\n", msb.FormatCPUs(c.CPUs))
 	fmt.Fprintf(&b, "  memory:  %s\n", c.Memory)
 	fmt.Fprintf(&b, "  shell:   %s\n", c.Shell)
 
@@ -119,6 +126,9 @@ func (p Plan) Render() string {
 		for _, nm := range tr.Options.Named {
 			fmt.Fprintf(&b, "    - %s: project volume %s at %s\n", logicalName(nm.Name), nm.Name, nm.Target)
 		}
+		if len(tr.Options.Named) > 0 {
+			fmt.Fprintf(&b, "    (project volumes' compatibility checks are pending; sbx run currently refuses this configuration)\n")
+		}
 		for _, om := range tr.Options.Owned {
 			kind := "directory"
 			if om.Kind == "disk" {
@@ -133,7 +143,7 @@ func (p Plan) Render() string {
 			fmt.Fprintf(&b, "    - %s\n", e)
 		}
 	}
-	fmt.Fprintf(&b, "  network: %s\n", describeNetwork(c.Network, tr.Options))
+	fmt.Fprintf(&b, "  network: %s\n", describeNetwork(c.Network))
 	if len(tr.SecretNames) > 0 {
 		fmt.Fprintf(&b, "  secrets (values never appear in this plan):\n")
 		for i, name := range tr.SecretNames {
@@ -161,14 +171,7 @@ func logicalName(backendName string) string {
 	return logical
 }
 
-func formatCPUs(cpus float64) string {
-	if cpus == float64(int(cpus)) {
-		return fmt.Sprintf("%d", int(cpus))
-	}
-	return fmt.Sprintf("%g", cpus)
-}
-
-func describeNetwork(n config.NetworkConfig, o msb.CreateOptions) string {
+func describeNetwork(n config.NetworkConfig) string {
 	var parts []string
 	switch n.Egress {
 	case "allowlist":

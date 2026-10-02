@@ -113,6 +113,44 @@ func TestRenderShowsTranslation(t *testing.T) {
 	}
 }
 
+func TestRenderShowsSandboxNameInCreateArgs(t *testing.T) {
+	p := testPlan(t)
+	rendered := p.Render()
+	if !strings.Contains(rendered, "--name "+p.Sandbox) {
+		t.Errorf("rendered msb create arguments lack --name <sandbox identity>:\n%s", rendered)
+	}
+}
+
+func TestRenderSecretlessConfigOmitsSecretConf(t *testing.T) {
+	root := t.TempDir()
+	info := gitx.Info{WorktreeRoot: root, CommonDir: filepath.Join(filepath.Dir(root), ".git")}
+	cfg, err := config.Load(writeConfig(t, `
+image = "alpine:3.20"
+cpus = 1
+memory = "1G"
+
+[network]
+egress = "public"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	rendered := Compose(info, cfg).Render()
+	if strings.Contains(rendered, "--secret-conf") {
+		t.Errorf("secretless plan renders --secret-conf, which msb create would never receive:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "secret map") {
+		t.Errorf("secretless plan renders the secret map section:\n%s", rendered)
+	}
+}
+
+func TestRenderNotesProjectVolumeGate(t *testing.T) {
+	rendered := testPlan(t).Render()
+	if !strings.Contains(rendered, "compatibility checks are pending") {
+		t.Errorf("plan with project volumes does not note the pending gate:\n%s", rendered)
+	}
+}
+
 func TestRenderNeverContainsSecretValues(t *testing.T) {
 	rendered := testPlan(t).Render()
 	// The plan knows names and host variables, never values. The value is
