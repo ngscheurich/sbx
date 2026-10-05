@@ -1,14 +1,14 @@
 FROM debian:unstable-slim
 
 ARG MISE_VERSION=2026.9.18
-ARG PI_VERSION=1.0.0
+ARG PI_VERSION=1.0.2
 
 ENV LANG=C.UTF-8
 
 # Install system dependencies
 RUN apt-get update && \
   apt-get install --yes --no-install-recommends \
-    curl ca-certificates nodejs npm fd-find ripgrep && \
+    curl ca-certificates git nodejs npm fd-find ripgrep && \
   rm -rf /var/lib/apt/lists/*
 
 # Install microsandbox
