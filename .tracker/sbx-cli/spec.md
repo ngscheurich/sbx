@@ -318,6 +318,7 @@ Still unverified; confirm before implementing dependent behavior:
 
 - whether `msb volumes --format json` populates `capacity_bytes` and `quota_mib` for disk and quota-limited directory volumes;
 - whether `msb exec` forwards signals;
+- whether `msb exec` accepts `--stream` while stdin is a terminal (msb 0.7.3 rejects it, so terminal stdin currently forces `--tty`, which mangles redirected stdout);
 - whether `--mount-owned` accepts a directory `quota` (v1 rejects it until confirmed);
 - whether `msb start` rereads a `--secret` from its own environment after a stop, which would require sbx to supply the secret on every start;
 - whether a `--secret-conf` map names the guest environment variable after the map key, holding a placeholder, as the secrets documentation describes.
