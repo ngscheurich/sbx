@@ -30,9 +30,14 @@ Usage:
 Commands:
   plan    Show what sbx would create for this worktree's persistent sandbox, changing nothing
   run     Run a one-off guest command in a disposable sandbox, removed afterward
+  up      Create or start this worktree's persistent sandbox, refusing drift unless --allow-stale
+  exec    Run a guest command in the persistent sandbox (created or started first), leaving it running
+  status  Show the persistent sandbox's identity, state, and drift, changing nothing
+  logs    Show the persistent sandbox's msb logs
+  stop    Stop the persistent sandbox, keeping its state and volumes
+  rm      Remove the persistent sandbox after confirmation (--yes in noninteractive use)
 
-The full v1 command set also includes build, up, exec, status, logs,
-stop, rm, and port prune; later releases implement them one by one.
+The remaining v1 commands, build and port prune, arrive in later releases.
 
 Run sbx from any directory inside a Git worktree that has an sbx.toml.
 `
@@ -58,6 +63,18 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runPlan(ctx, stdout, stderr)
 	case "run":
 		return runDisposable(ctx, args, stdin, stdout, stderr)
+	case "up":
+		return runUp(ctx, args, stdout, stderr)
+	case "exec":
+		return runExec(ctx, args, stdin, stdout, stderr)
+	case "status":
+		return runStatus(ctx, args, stdout, stderr)
+	case "logs":
+		return runLogs(ctx, args, stdout, stderr)
+	case "stop":
+		return runStop(ctx, args, stdout, stderr)
+	case "rm":
+		return runRm(ctx, args, stdin, stdout, stderr)
 	case "-V", "--version", "version":
 		fmt.Fprintln(stdout, "sbx (development build)")
 		return exitOK
