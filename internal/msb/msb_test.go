@@ -532,3 +532,160 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// TestPersistentLifecycleRoundTrip drives the persistent-sandbox seam
+// against the stateful fake: create records the sandbox, List and Inspect
+// report it (labels from the layer msb keeps for stopped sandboxes), Stop
+// and Start move its state without losing labels, Logs surfaces output,
+// and Remove clears it.
+func TestPersistentLifecycleRoundTrip(t *testing.T) {
+	testsupport.FakeMSB(t)
+	box := CLI{}
+	ctx := context.Background()
+
+	err := box.Create(ctx, CreateOptions{
+		Name:   "app-main-12345678",
+		Image:  "alpine:3.20",
+		CPUs:   1,
+		Memory: "1G",
+		Labels: []Label{
+			{Key: "sbx.managed", Value: "1"},
+			{Key: "sbx.mode", Value: "persistent"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	entries, err := box.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "app-main-12345678" {
+		t.Fatalf("list reported %+v", entries)
+	}
+	if entries[0].Status != "running" {
+		t.Errorf("a fresh sandbox is booted, status = %q", entries[0].Status)
+	}
+
+	// The listing carries no labels; ownership lives in the per-sandbox
+	// inspection, so Inspect is the only place it can come from.
+	box2, err := box.Inspect(ctx, "app-main-12345678")
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	if box2.Status != "running" {
+		t.Errorf("status = %q, want running", box2.Status)
+	}
+	if box2.ActiveConfig == nil {
+		t.Fatal("active_config is null on a running sandbox")
+	}
+	if got := box2.ActiveConfig.Labels["sbx.managed"]; got != "1" {
+		t.Errorf("labels = %v", box2.ActiveConfig.Labels)
+	}
+	if box2.ActiveConfig.ManifestDigest == "" {
+		t.Error("inspect reported no image manifest digest")
+	}
+
+	if err := box.Stop(ctx, "app-main-12345678"); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	stopped, err := box.Inspect(ctx, "app-main-12345678")
+	if err != nil {
+		t.Fatalf("inspect after stop: %v", err)
+	}
+	if stopped.ActiveConfig != nil {
+		t.Error("active_config should be null on a stopped sandbox")
+	}
+	// A stopped sandbox keeps its labels under config.
+	if got := stopped.Config.Labels["sbx.managed"]; got != "1" {
+		t.Errorf("stopped sandbox lost its labels: %v", stopped.Config.Labels)
+	}
+
+	if err := box.Start(ctx, "app-main-12345678"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	started, err := box.Inspect(ctx, "app-main-12345678")
+	if err != nil {
+		t.Fatalf("inspect after start: %v", err)
+	}
+	if started.Status != "running" || started.ActiveConfig == nil {
+		t.Errorf("started sandbox = %+v", started)
+	}
+
+	logs, err := box.Logs(ctx, "app-main-12345678")
+	if err != nil {
+		t.Fatalf("logs: %v", err)
+	}
+	if !strings.Contains(logs, "app-main-12345678") {
+		t.Errorf("logs do not name the sandbox: %q", logs)
+	}
+
+	if err := box.Remove(ctx, "app-main-12345678"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	entries, err = box.List(ctx)
+	if err != nil {
+		t.Fatalf("list after remove: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("sandbox survived removal: %+v", entries)
+	}
+	if _, err := box.Inspect(ctx, "app-main-12345678"); err == nil {
+		t.Error("inspect succeeded on a removed sandbox")
+	}
+}
+
+// TestInspectPinnedArgv pins the exact argv of the inspection commands.
+func TestInspectPinnedArgv(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	box := CLI{}
+	ctx := context.Background()
+	if _, err := box.List(ctx); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if _, err := box.Inspect(ctx, "box"); err == nil {
+		t.Fatal("inspect of a missing sandbox succeeded")
+	}
+	if _, err := box.Logs(ctx, "box"); err == nil {
+		t.Fatal("logs of a missing sandbox succeeded")
+	}
+	if err := box.Stop(ctx, "box"); err == nil {
+		t.Fatal("stop of a missing sandbox succeeded")
+	}
+	calls := fake.Calls()
+	if len(calls) != 4 {
+		t.Fatalf("fake msb saw %d calls", len(calls))
+	}
+	if got := calls[0].Args; !equal(got, []string{"ls", "--format", "json"}) {
+		t.Errorf("list argv: %q", got)
+	}
+	if got := calls[1].Args; !equal(got, []string{"inspect", "box", "--format", "json"}) {
+		t.Errorf("inspect argv: %q", got)
+	}
+	if got := calls[2].Args; !equal(got, []string{"logs", "box"}) {
+		t.Errorf("logs argv: %q", got)
+	}
+	if got := calls[3].Args; !equal(got, []string{"stop", "box"}) {
+		t.Errorf("stop argv: %q", got)
+	}
+}
+
+// TestImageInspectReturnsDigest checks that the image seam resolves the
+// manifest digest, tolerating the plain and the nested msb report shapes.
+func TestImageInspectReturnsDigest(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	t.Setenv("FAKE_MSB_IMAGE_DIGEST", "sha256:changed")
+	box := CLI{}
+	info, err := box.ImageInspect(context.Background(), "alpine:3.20")
+	if err != nil {
+		t.Fatalf("image inspect: %v", err)
+	}
+	if info.ManifestDigest != "sha256:changed" {
+		t.Errorf("digest = %q", info.ManifestDigest)
+	}
+	calls := fake.Calls()
+	if len(calls) != 1 || !equal(calls[0].Args, []string{"image", "inspect", "alpine:3.20", "--format", "json"}) {
+		t.Fatalf("unexpected calls: %v", calls)
+	}
+}

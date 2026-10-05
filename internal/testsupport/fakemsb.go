@@ -4,6 +4,7 @@
 package testsupport
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,16 +19,26 @@ import (
 // observed MSB_BACKEND value, then one argument per line — and then behaves
 // according to FAKE_MSB_* variables:
 //
-//	FAKE_MSB_CONTEXT_BACKEND  backend reported by "msb context" (default local)
-//	FAKE_MSB_IMAGE_MISSING    comma-separated images that "image inspect" fails for
-//	FAKE_MSB_PULL_FAIL        set to make "image pull" fail
-//	FAKE_MSB_CREATE_FAIL      substring that makes "create" fail when the name matches
-//	FAKE_MSB_EXEC_SLEEP       seconds "exec" sleeps before answering (interruptible via SIGTERM)
-//	FAKE_MSB_EXEC_FAIL_START  set to make "exec" exit 127 without running the guest
-//	FAKE_MSB_EXIT             exit status of "exec" (default 0)
-//	FAKE_MSB_RM_FAIL          set to make "remove" fail
+//	FAKE_MSB_CONTEXT_BACKEND   backend reported by "msb context" (default local)
+//	FAKE_MSB_IMAGE_MISSING     comma-separated images that "image inspect" fails for
+//	FAKE_MSB_IMAGE_DIGEST      manifest digest reported by "image inspect" and
+//	                            recorded for created sandboxes (default sha256:fake)
+//	FAKE_MSB_PULL_FAIL         set to make "image pull" fail
+//	FAKE_MSB_CREATE_FAIL       substring that makes "create" fail when the name matches
+//	FAKE_MSB_EXEC_SLEEP         seconds "exec" sleeps before answering (interruptible via SIGTERM)
+//	FAKE_MSB_EXEC_FAIL_START    set to make "exec" exit 127 without running the guest
+//	FAKE_MSB_EXIT               exit status of "exec" (default 0)
+//	FAKE_MSB_RM_FAIL            set to make "remove" fail
+//
+// The fake is stateful: created sandboxes live as record files under
+// $FAKE_MSB_LOG/store/sbox-<name>, so ls, inspect, start, stop, and remove
+// observe what earlier calls created, the way a real backend would. Test
+// helpers in this package can seed records directly to simulate sandboxes
+// sbx did not create.
 const fakeMsbSh = `#!/bin/sh
 dir="${FAKE_MSB_LOG:?}"
+store="$dir/store"
+mkdir -p "$store"
 n=0
 while [ -f "$dir/call.$n" ]; do n=$((n+1)); done
 tmp="$dir/tmp.$$"
@@ -36,6 +47,49 @@ tmp="$dir/tmp.$$"
   for a in "$@"; do printf '%s\n' "$a"; done
 } > "$tmp"
 mv "$tmp" "$dir/call.$n"
+
+record_path() {
+  printf '%s/sbox-%s' "$store" "$1"
+}
+
+json_labels() {
+  # Renders the label.<key>=<value> lines of one record as a JSON object.
+  out=""
+  while IFS= read -r line; do
+    case "$line" in
+    label.*=*)
+      rest=${line#label.}
+      out="$out\"${rest%%=*}\":\"${rest#*=}\","
+      ;;
+    esac
+  done < "$1"
+  if [ -n "$out" ]; then
+    out=${out%,}
+  fi
+  printf '{%s}' "$out"
+}
+
+json_config() {
+  # Renders one record as an msb config layer: manifest digest, labels,
+  # and the (still empty) published ports.
+  digest=$(sed -n 's/^digest=//p' "$1")
+  printf '{"manifest_digest":"%s","labels":%s,"ports":[]}' "$digest" "$(json_labels "$1")"
+}
+
+missing_sandbox() {
+  echo "sbx-fake-msb: sandbox $1 not found" >&2
+  exit 1
+}
+
+value_flags="--name --cpus --memory --mount-dir --mount-file --mount-named --mount-owned --env --net-rule --dns-nameserver --secret-conf --fs-conf --workdir"
+
+set_status() {
+  f=$(record_path "$1")
+  [ -f "$f" ] || missing_sandbox "$1"
+  grep -v '^status=' "$f" > "$store/status.$$"
+  echo "status=$2" >> "$store/status.$$"
+  mv "$store/status.$$" "$f"
+}
 
 case "$1" in
 context)
@@ -47,7 +101,7 @@ image)
     case ",$FAKE_MSB_IMAGE_MISSING," in
     *,$3,*) exit 1 ;;
     esac
-    printf '{"digest":"sha256:fake"}\n'
+    printf '{"digest":"%s"}\n' "${FAKE_MSB_IMAGE_DIGEST:-sha256:fake}"
     ;;
   pull)
     if [ -n "$FAKE_MSB_PULL_FAIL" ]; then
@@ -58,13 +112,48 @@ image)
   esac
   ;;
 create)
-  prev=""
+  shift
   name=""
-  for a in "$@"; do
-    if [ "$prev" = "--name" ]; then
-      name="$a"
-    fi
-    prev="$a"
+  image=""
+  labels=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --name)
+      name="$2"
+      shift 2
+      ;;
+    --label)
+      labels="$labels
+$2"
+      shift 2
+      ;;
+    --secret-conf)
+      [ -f "$2" ] && cp "$2" "$dir/secret-conf.$n"
+      shift 2
+      ;;
+    --fs-conf)
+      [ -f "$2" ] && cp "$2" "$dir/fs-conf.$n"
+      shift 2
+      ;;
+    --tls-intercept|--no-net|--tty|--no-tty|--pull)
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      # Any other flag with a value: consume the value too.
+      case " $value_flags " in
+      *" $1 "*) shift 2 ;;
+      *) shift ;;
+      esac
+      ;;
+    *)
+      image="$1"
+      shift
+      ;;
+    esac
   done
   if [ -n "$FAKE_MSB_CREATE_FAIL" ]; then
     case "$name" in
@@ -74,6 +163,72 @@ create)
       ;;
     esac
   fi
+  f=$(record_path "$name")
+  {
+    echo "status=running"
+    echo "image=$image"
+    echo "digest=${FAKE_MSB_IMAGE_DIGEST:-sha256:fake}"
+    echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '%s\n' "$labels" | while IFS= read -r l; do
+      [ -n "$l" ] && echo "label.$l"
+    done
+  } > "$store/create.$$"
+  mv "$store/create.$$" "$f"
+  ;;
+ls)
+  out="["
+  first=1
+  for f in "$store"/sbox-*; do
+    [ -f "$f" ] || continue
+    name=${f##*/sbox-}
+    image=$(sed -n 's/^image=//p' "$f")
+    status=$(sed -n 's/^status=//p' "$f")
+    created=$(sed -n 's/^created_at=//p' "$f")
+    if [ "$first" = 0 ]; then
+      out="$out,"
+    fi
+    out="$out{\"name\":\"$name\",\"image\":\"$image\",\"status\":\"$status\",\"created_at\":\"$created\"}"
+    first=0
+  done
+  printf '%s]\n' "$out"
+  ;;
+inspect)
+  f=$(record_path "$2")
+  [ -f "$f" ] || missing_sandbox "$2"
+  status=$(sed -n 's/^status=//p' "$f")
+  created=$(sed -n 's/^created_at=//p' "$f")
+  cfg=$(json_config "$f")
+  if [ "$status" = "running" ]; then
+    active="$cfg"
+  else
+    active="null"
+  fi
+  printf '{"name":"%s","status":"%s","created_at":"%s","active_config":%s,"config":%s}\n' "$2" "$status" "$created" "$active" "$cfg"
+  ;;
+start)
+  set_status "$2" running
+  ;;
+stop)
+  set_status "$2" stopped
+  ;;
+logs)
+  f=$(record_path "$2")
+  [ -f "$f" ] || missing_sandbox "$2"
+  printf 'fake log line 1 for %s\n' "$2"
+  printf 'fake log line 2 for %s\n' "$2"
+  ;;
+remove)
+  if [ -n "$FAKE_MSB_RM_FAIL" ]; then
+    echo "sbx-fake-msb: remove failed" >&2
+    exit 1
+  fi
+  shift
+  for a in "$@"; do
+    case "$a" in
+    --force) ;;
+    *) rm -f "$(record_path "$a")" ;;
+    esac
+  done
   ;;
 exec|run)
   prev=""
@@ -233,6 +388,34 @@ func (l Log) FsConf(t *testing.T, index int) string {
 func (l Log) FailCreate(t *testing.T, substring string) {
 	t.Helper()
 	t.Setenv("FAKE_MSB_CREATE_FAIL", substring)
+}
+
+// SeedSandbox writes a fake-backend record directly, so a test can simulate
+// a sandbox sbx did not create — such as an unowned one sharing a Sandbox
+// identity — without driving the CLI first. The record shape matches what
+// the fake's own create writes.
+func (l Log) SeedSandbox(t *testing.T, name, image, status string, labels map[string]string) {
+	t.Helper()
+	store := filepath.Join(l.dir, "store")
+	if err := os.MkdirAll(store, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "status=%s\n", status)
+	fmt.Fprintf(&b, "image=%s\n", image)
+	fmt.Fprintf(&b, "digest=%s\n", "sha256:seeded")
+	fmt.Fprintf(&b, "created_at=%s\n", "2024-01-01T00:00:00Z")
+	names := make([]string, 0, len(labels))
+	for key := range labels {
+		names = append(names, key)
+	}
+	sort.Strings(names)
+	for _, key := range names {
+		fmt.Fprintf(&b, "label.%s=%s\n", key, labels[key])
+	}
+	if err := os.WriteFile(filepath.Join(store, "sbox-"+name), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // FixtureTOML reads a fixture sbx.toml and removes the named top-level

@@ -10,10 +10,9 @@
 // recorded in the spec's backend verification; behaviors not yet confirmed
 // on a real host are marked UNVERIFIED.
 //
-// Create, Exec, and Remove have no production caller yet: only plan and run
-// are wired into the CLI. They are the deliberately test-pinned seam for the
-// persistent-sandbox commands (up, exec, rm) and land with those commands in
-// later releases; until then their pinned argv is what tests keep honest.
+// The persistent-sandbox commands (up, exec, status, logs, stop, rm) drive
+// Create, Exec, Inspect, List, Start, Stop, Logs, and Remove; plan and run
+// stay read-only or disposable.
 package msb
 
 import (
@@ -231,6 +230,158 @@ type CreateOptions struct {
 	SecretConf string
 	// NoNet disables all network access (egress "none" in sbx terms).
 	NoNet bool
+}
+
+// ListEntry is one record of `msb ls --format json`. The listing carries
+// no labels at all (observed on msb 0.7.5: only name, image, status, and
+// created_at), so ownership is never decided from a listing — it is checked
+// per sandbox through Inspect.
+type ListEntry struct {
+	Name      string `json:"name"`
+	Image     string `json:"image"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+// List runs `msb ls --format json` and returns every sandbox the backend
+// knows. A failure to list is never read as an empty backend: the error
+// surfaces and the caller fails closed.
+func (c CLI) List(ctx context.Context) ([]ListEntry, error) {
+	out, err := c.run(ctx, "ls", "--format", "json")
+	if err != nil {
+		return nil, fmt.Errorf("listing the backend's sandboxes: %w", err)
+	}
+	trimmed := strings.TrimSpace(out)
+	var entries []ListEntry
+	if err := json.Unmarshal([]byte(trimmed), &entries); err != nil {
+		return nil, fmt.Errorf("parsing msb ls output: %w", err)
+	}
+	return entries, nil
+}
+
+// SandboxConfig is one configuration layer of `msb inspect --format json`:
+// the active configuration while the sandbox runs, and the recorded one
+// when it is stopped (observed on msb 0.7.3: active_config is null when
+// stopped, while config keeps the labels, image digest, and declared
+// ports). Ports keep their raw JSON: their report shape is not yet pinned
+// by a real-host probe, and the port registry arrives with a later release.
+type SandboxConfig struct {
+	ManifestDigest string            `json:"manifest_digest"`
+	Labels         map[string]string `json:"labels"`
+	Ports          json.RawMessage   `json:"ports"`
+}
+
+// Sandbox is the `msb inspect --format json` report for one sandbox.
+type Sandbox struct {
+	Name         string         `json:"name"`
+	Status       string         `json:"status"`
+	CreatedAt    string         `json:"created_at"`
+	ActiveConfig *SandboxConfig `json:"active_config"`
+	Config       SandboxConfig  `json:"config"`
+}
+
+// EffectiveConfig returns the layer carrying this sandbox's labels and
+// image digest: the active configuration while running, the recorded one
+// when stopped.
+func (s Sandbox) EffectiveConfig() *SandboxConfig {
+	if s.ActiveConfig != nil {
+		return s.ActiveConfig
+	}
+	return &s.Config
+}
+
+// Inspect runs `msb inspect <name> --format json`. A missing sandbox is an
+// error; callers that must distinguish existence list the backend first.
+func (c CLI) Inspect(ctx context.Context, name string) (Sandbox, error) {
+	out, err := c.run(ctx, "inspect", name, "--format", "json")
+	if err != nil {
+		return Sandbox{}, fmt.Errorf("inspecting sandbox %s: %w", name, err)
+	}
+	var s Sandbox
+	trimmed := strings.TrimSpace(out)
+	if err := json.Unmarshal([]byte(trimmed), &s); err != nil {
+		return Sandbox{}, fmt.Errorf("parsing msb inspect output for %s: %w", name, err)
+	}
+	return s, nil
+}
+
+// Start runs `msb start <name>`: a stopped sandbox keeps its volumes and
+// configuration, so starting is not creation and never adopts anything.
+func (c CLI) Start(ctx context.Context, name string) error {
+	if _, err := c.run(ctx, "start", name); err != nil {
+		return fmt.Errorf("starting sandbox %s: %w", name, err)
+	}
+	return nil
+}
+
+// Stop runs `msb stop <name>`: the sandbox keeps its state, ready to start
+// again. Whether a stopped sandbox's msb start needs a --secret supplied
+// again is UNVERIFIED, so sbx refuses secret-bearing restarts until that is
+// confirmed.
+func (c CLI) Stop(ctx context.Context, name string) error {
+	if _, err := c.run(ctx, "stop", name); err != nil {
+		return fmt.Errorf("stopping sandbox %s: %w", name, err)
+	}
+	return nil
+}
+
+// Logs runs `msb logs <name>` and returns its output. The subcommand
+// spelling follows the documented sandbox commands; it has not yet been
+// exercised against a real host.
+func (c CLI) Logs(ctx context.Context, name string) (string, error) {
+	out, err := c.run(ctx, "logs", name)
+	if err != nil {
+		return "", fmt.Errorf("reading sandbox %s's logs: %w", name, err)
+	}
+	return out, nil
+}
+
+// ImageInfo is the `msb image inspect --format json` report for one image.
+type ImageInfo struct {
+	// ManifestDigest identifies the image's contents, not its tag.
+	ManifestDigest string
+}
+
+// ImageInspect runs `msb image inspect <image> --format json` and resolves
+// the manifest digest. Real msb 0.7.3 reported a manifest digest and a
+// config digest; the parser accepts a top-level "digest" and, tolerantly,
+// a digest nested under "manifest" or "config", preferring the manifest's.
+func (c CLI) ImageInspect(ctx context.Context, image string) (ImageInfo, error) {
+	out, err := c.run(ctx, "image", "inspect", image, "--format", "json")
+	if err != nil {
+		return ImageInfo{}, err
+	}
+	info, err := parseImageInfo(strings.TrimSpace(out))
+	if err != nil {
+		return ImageInfo{}, fmt.Errorf("parsing msb image inspect output for %s: %w", image, err)
+	}
+	return info, nil
+}
+
+// parseImageInfo extracts the manifest digest from an image-inspection
+// report.
+func parseImageInfo(out string) (ImageInfo, error) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		return ImageInfo{}, fmt.Errorf("%q is not JSON: %w", out, err)
+	}
+	if digest, ok := digestOf(doc); ok {
+		return ImageInfo{ManifestDigest: digest}, nil
+	}
+	for _, key := range []string{"manifest", "config"} {
+		if nested, ok := doc[key].(map[string]any); ok {
+			if digest, ok := digestOf(nested); ok {
+				return ImageInfo{ManifestDigest: digest}, nil
+			}
+		}
+	}
+	return ImageInfo{}, fmt.Errorf("no digest found in %q", out)
+}
+
+// digestOf reads a "digest" string from one JSON object.
+func digestOf(doc map[string]any) (string, bool) {
+	digest, ok := doc["digest"].(string)
+	return digest, ok
 }
 
 // Create runs `msb create`. Argument order is fixed and pinned by tests.
@@ -466,6 +617,15 @@ func (c CLI) PullIfMissing(ctx context.Context, image string) error {
 	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; `sbx build` will automate this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
 }
 
+// Pull runs `msb image pull <image>`: one backend mutation, so persistent
+// creation calls it only after inspecting the image has failed.
+func (c CLI) Pull(ctx context.Context, image string) error {
+	if _, err := c.run(ctx, "image", "pull", image); err != nil {
+		return fmt.Errorf("pulling image %s: %w", image, err)
+	}
+	return nil
+}
+
 // stdinIsTerminal reports whether the reader is an interactive terminal.
 // Anything that is not an *os.File — buffers in tests, pipes from callers
 // that never hand over a file — counts as a pipe.
@@ -475,6 +635,13 @@ func stdinIsTerminal(stdin io.Reader) bool {
 		return false
 	}
 	return term.IsTerminal(int(f.Fd()))
+}
+
+// StdinIsTerminal reports whether the given reader is an interactive
+// terminal, by the same rule the exec paths use. Commands that read a
+// confirmation answer use it to tell an interactive session from a pipe.
+func StdinIsTerminal(stdin io.Reader) bool {
+	return stdinIsTerminal(stdin)
 }
 
 // isTerminal reports whether the writer is an interactive terminal, with the
