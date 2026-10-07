@@ -38,6 +38,8 @@ import (
 //	FAKE_MSB_RM_FAIL            set to make "remove" fail
 //	FAKE_MSB_VOLUMES_FAIL       set to make "volumes" fail
 //	FAKE_MSB_VOLUMES_MALFORMED  set to make "volumes" print non-JSON
+//	FAKE_MSB_LS_FAIL            set to make "ls" fail
+//	FAKE_MSB_INSPECT_FAIL       set to make "inspect" fail
 //	FAKE_MSB_STATUS_OVERRIDE    status word that "ls" and "inspect" report
 //	                            regardless of the records' real state (models
 //	                            a listing/reality mismatch)
@@ -92,9 +94,22 @@ json_labels() {
 
 json_config() {
   # Renders one record as an msb config layer: manifest digest, labels,
-  # and the (still empty) published ports.
+  # and the published ports recorded at creation (published.<host>=<guest>
+  # lines), the way a real backend reports the loopback bindings it accepted.
   digest=$(sed -n 's/^digest=//p' "$1")
-  printf '{"manifest_digest":"%s","labels":%s,"ports":[]}' "$digest" "$(json_labels "$1")"
+  ports=""
+  while IFS= read -r line; do
+    case "$line" in
+    published.*=*)
+      binding=${line#published.}
+      guest=${binding#*=}
+      host=${binding%%=*}
+      ports="$ports{\"host\":\"$host\",\"guest\":$guest},"
+      ;;
+    esac
+  done < "$1"
+  ports=${ports%,}
+  printf '{"manifest_digest":"%s","labels":%s,"ports":[%s]}' "$digest" "$(json_labels "$1")" "$ports"
 }
 
 missing_sandbox() {
@@ -252,12 +267,18 @@ create)
   name=""
   image=""
   labels=""
+  published=""
   named_specs=""
   owned_specs=""
   while [ $# -gt 0 ]; do
     case "$1" in
     --name)
       name="$2"
+      shift 2
+      ;;
+    --publish)
+      published="$published
+$2"
       shift 2
       ;;
     --mount-named)
@@ -320,6 +341,14 @@ $2"
     printf '%s\n' "$labels" | while IFS= read -r l; do
       [ -n "$l" ] && echo "label.$l"
     done
+    # A second sandbox publishing an already-published port is accepted by
+    # the real msb 0.7.3 (observed: the first guest kept serving HTTP), so
+    # the fake records every --publish without checking for collisions.
+    printf '%s\n' "$published" | while IFS= read -r p; do
+      case "$p" in
+      127.0.0.1:*) echo "published.${p%:*}=${p##*:}" ;;
+      esac
+    done
   } > "$store/create.$$"
   mv "$store/create.$$" "$f"
   printf '%s\n' "$named_specs" | while IFS= read -r s; do
@@ -330,6 +359,10 @@ $2"
   done
   ;;
 ls)
+  if [ -n "$FAKE_MSB_LS_FAIL" ]; then
+    echo "sbx-fake-msb: ls failed" >&2
+    exit 1
+  fi
   out="["
   first=1
   for f in "$store"/sbox-*; do
@@ -352,6 +385,10 @@ ls)
   printf '%s]\n' "$out"
   ;;
 inspect)
+  if [ -n "$FAKE_MSB_INSPECT_FAIL" ]; then
+    echo "sbx-fake-msb: inspect failed" >&2
+    exit 1
+  fi
   f=$(record_path "$2")
   [ -f "$f" ] || missing_sandbox "$2"
   status=$(sed -n 's/^status=//p' "$f")
@@ -676,6 +713,26 @@ func (l Log) SeedSandbox(t *testing.T, name, image, status string, labels map[st
 	}
 }
 
+// SeedPublishedPort records a published port on an existing sandbox record,
+// so a test can simulate an unmanaged msb sandbox that already publishes a
+// candidate port. The host binding is always the loopback address.
+func (l Log) SeedPublishedPort(t *testing.T, sandbox string, hostPort, guestPort int) {
+	t.Helper()
+	f := filepath.Join(l.dir, "store", "sbox-"+sandbox)
+	if _, err := os.Stat(f); err != nil {
+		t.Fatalf("seeding a published port on %s: %v", sandbox, err)
+	}
+	line := fmt.Sprintf("published.127.0.0.1:%d=%d\n", hostPort, guestPort)
+	file, err := os.OpenFile(f, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.WriteString(line); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // SeedVolume writes a fake-backend volume record directly, so a test can
 // simulate a pre-existing volume — one a sibling worktree's sandbox
 // created, or a conflicting one another branch's definition created. Nil
@@ -732,6 +789,7 @@ func Int64(v int64) *int64 {
 	return &v
 }
 
+<<<<<<< HEAD
 // SandboxExists reports whether the fake backend holds the named sandbox
 // record — false once it has been removed.
 func (l Log) SandboxExists(t *testing.T, name string) bool {
@@ -741,6 +799,32 @@ func (l Log) SandboxExists(t *testing.T, name string) bool {
 		t.Fatalf("stat sandbox record %s: %v", name, err)
 	}
 	return err == nil
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+=======
+// FixtureWithoutLines reads a fixture sbx.toml and removes single lines
+// beginning with any of the given prefixes, for variants that gate on a
+// key-value field (such as image_check) rather than a table block.
+func FixtureWithoutLines(t *testing.T, path string, prefixes ...string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading fixture %s: %v", path, err)
+	}
+	var out []string
+	for _, line := range strings.Split(string(data), "\n") {
+		dropped := false
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(line, prefix) {
+				dropped = true
+				break
+			}
+		}
+		if !dropped {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 }
 
 // FixtureTOML reads a fixture sbx.toml and removes the named top-level

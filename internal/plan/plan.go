@@ -10,13 +10,15 @@ import (
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
+	"github.com/ngscheurich/sbx/internal/ports"
 	"github.com/ngscheurich/sbx/internal/translate"
 	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
 // Plan describes the intended persistent sandbox for one worktree. It is
-// deliberately partial in this release: Creation drift, image-check status,
-// and tentative ports are added by later releases.
+// deliberately partial in this release: Creation drift and image-check
+// status are added by later releases. The ports report is tentative by
+// nature — planning reads the registry read-only and never reserves.
 type Plan struct {
 	// Project is the sanitized project basename.
 	Project string
@@ -43,6 +45,7 @@ type Plan struct {
 	// uninspectable backend is reported, never read as an empty listing or
 	// as compatible definitions.
 	VolumeCheckErr error
+<<<<<<< HEAD
 	// ImageCheck is the declared image check's read-only status, set by the
 	// caller after inspecting the backend and host state. Nil means the
 	// configuration declares no image check or the status was not
@@ -62,6 +65,29 @@ type ImageCheckReport struct {
 	Digest string
 	// Reason explains an unresolvable status.
 	Reason string
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+=======
+	// Ports are the declared ports' reservation outlook, set by the caller
+	// from a read-only registry read. A nil slice with no error means no
+	// ports are declared.
+	Ports []PortStatus
+	// PortRegistryErr records a failed registry read. Read-only planning
+	// reports it without reserving or correcting anything.
+	PortRegistryErr error
+}
+
+// PortStatus is one declared port's reservation outlook: the reserved host
+// loopback port when the registry holds one, or zero when the port is
+// chosen at creation.
+type PortStatus struct {
+	// Name is the port's declared name.
+	Name string
+	// Guest is the TCP port the service listens on inside the sandbox.
+	Guest int
+	// Reserved is the host loopback port the registry holds for this
+	// sandbox and port name; zero means unreserved.
+	Reserved int
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 }
 
 // Compose derives the Plan from Git discovery and validated configuration.
@@ -186,6 +212,21 @@ func (p Plan) Render() string {
 		}
 	}
 	fmt.Fprintf(&b, "  network: %s\n", describeNetwork(c.Network))
+	switch {
+	case len(tr.Ports) == 0:
+	case p.PortRegistryErr != nil:
+		fmt.Fprintf(&b, "  ports: %d declared, but the port registry could not be read (%v);\n", len(tr.Ports), p.PortRegistryErr)
+		fmt.Fprintf(&b, "    planning reports without reserving or correcting\n")
+	default:
+		fmt.Fprintf(&b, "  ports:\n")
+		for _, ps := range p.Ports {
+			if ps.Reserved != 0 {
+				fmt.Fprintf(&b, "    - %s: guest %d -> 127.0.0.1:%d (reserved)\n", ps.Name, ps.Guest, ps.Reserved)
+			} else {
+				fmt.Fprintf(&b, "    - %s: guest %d -> host port chosen at creation (from %d-%d)\n", ps.Name, ps.Guest, ports.FirstPort, ports.LastPort)
+			}
+		}
+	}
 	if c.BootstrapDeclared() {
 		fmt.Fprintf(&b, "  bootstrap: runs once in each new sandbox, as `%s -c` in the workspace;\n", c.Shell)
 		fmt.Fprintf(&b, "    `sbx status` reports its completion against the live sandbox\n")
@@ -223,7 +264,15 @@ func (p Plan) Render() string {
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
 	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift, Bootstrap completion against a live\n")
+<<<<<<< HEAD
 	fmt.Fprintf(&b, "sandbox (see `sbx status`), and tentative ports are added by later releases.\n")
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+	fmt.Fprintf(&b, "sandbox (see `sbx status`), image-check status, and tentative ports are\n")
+	fmt.Fprintf(&b, "added by later releases.\n")
+=======
+	fmt.Fprintf(&b, "sandbox (see `sbx status`), and image-check status are added by later\n")
+	fmt.Fprintf(&b, "releases.\n")
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	fmt.Fprintf(&b, "sbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/plan"
+	"github.com/ngscheurich/sbx/internal/state"
 	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
@@ -40,8 +41,8 @@ Commands:
   logs    Show the persistent sandbox's msb logs
   stop    Stop the persistent sandbox, keeping its state and volumes
   rm      Remove the persistent sandbox after confirmation (--yes in noninteractive use)
-
-The remaining v1 command, port prune, arrives in a later release.
+  port prune
+          Remove port reservations for sandboxes that no longer exist
 
 Run sbx from any directory inside a Git worktree that has an sbx.toml.
 `
@@ -81,6 +82,12 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runStop(ctx, args, stdout, stderr)
 	case "rm":
 		return runRm(ctx, args, stdin, stdout, stderr)
+	case "port":
+		if len(args) < 2 || args[1] != "prune" {
+			fmt.Fprintf(stderr, "sbx: unknown command %q; the only port command is %q\n", strings.Join(args, " "), "port prune")
+			return exitUsage
+		}
+		return runPortPrune(ctx, args, stdout, stderr)
 	case "-V", "--version", "version":
 		fmt.Fprintln(stdout, "sbx (development build)")
 		return exitOK
@@ -98,11 +105,17 @@ func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
 	}
 	p := plan.Compose(info, cfg)
 	checkPlanVolumes(ctx, msb.CLI{}, &p)
+<<<<<<< HEAD
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+=======
+	checkPlanPorts(&p)
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
 }
 
+<<<<<<< HEAD
 // checkPlanImageCheck fills the plan's image-check status. It is
 // read-only: the image is inspected and host state is read, but nothing is
 // launched, recorded, or changed. An unresolvable status — a missing
@@ -134,6 +147,30 @@ func checkPlanImageCheck(ctx context.Context, box msb.CLI, info gitx.Info, cfg c
 		report.State = "known"
 	} else {
 		report.State = "pending"
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+=======
+// checkPlanPorts fills the Plan's ports report from a read-only registry
+// read. Planning never reserves or corrects: a port without a reservation
+// is reported as chosen at creation, and a failed registry read is
+// reported, never read as an empty one.
+func checkPlanPorts(p *plan.Plan) {
+	if p.TranslateErr != nil || len(p.Translation.Ports) == 0 {
+		return
+	}
+	records, err := state.LoadPortReservations()
+	if err != nil {
+		p.PortRegistryErr = err
+		return
+	}
+	for _, d := range p.Translation.Ports {
+		ps := plan.PortStatus{Name: d.Name, Guest: d.Guest}
+		for _, r := range records {
+			if r.Sandbox == p.Sandbox && r.Name == d.Name {
+				ps.Reserved = r.Port
+			}
+		}
+		p.Ports = append(p.Ports, ps)
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	}
 }
 

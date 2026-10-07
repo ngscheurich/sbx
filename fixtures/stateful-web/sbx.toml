@@ -1,0 +1,42 @@
+image = "sbx-stateful-web:latest"
+cpus = 2
+memory = "4G"
+shell = "/bin/sh"
+image_check = "image-check.sh"
+
+[[mounts]]
+type = "tmpfs"
+target = "/tmp"
+size = "512M"
+
+[volumes.shared_cache]
+target = "/opt/shared-cache"
+scope = "project"
+
+[volumes.artifacts]
+target = "/vm/artifacts"
+scope = "sandbox"
+kind = "disk"
+size = "8G"
+
+[volumes.data]
+target = "/var/lib/sbx-app"
+scope = "sandbox"
+kind = "disk"
+size = "2G"
+
+[network]
+egress = "public"
+
+[ports.web]
+guest = 4000
+
+[env]
+SBX_DATA_DIR = "/var/lib/sbx-app"
+
+[build]
+context = "."
+dockerfile = "Dockerfile"
+
+[bootstrap]
+run = 'printf "bootstrapped\n" > "$SBX_DATA_DIR/bootstrapped"'

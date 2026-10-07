@@ -40,6 +40,11 @@ type Translation struct {
 	// their derived backend names, for the pre-creation compatibility
 	// check against the backend's existing volumes (ADR-0003).
 	ProjectVolumes []volumes.Declared
+	// Ports are the declared named guest ports in name order. The host
+	// loopback ports are reserved at creation time, never here — choosing
+	// one would make translation mutate state, and the Plan must stay
+	// read-only.
+	Ports []DeclaredPort
 	// Tmpfs are the declared tmpfs mounts in declaration order.
 	Tmpfs []Tmpfs
 	// FsConfYAML is the generated filesystem configuration carrying the
@@ -48,6 +53,16 @@ type Translation struct {
 	// always go through --fs-conf; msb applies config-file mounts
 	// additively alongside mount flags (verified on msb 0.7.5).
 	FsConfYAML string
+}
+
+// DeclaredPort is one declared named port: the port's name and the guest
+// TCP port its service listens on. No host port travels with it — that is
+// reserved at creation and lives in the registry.
+type DeclaredPort struct {
+	// Name is the port's name from [ports.<name>].
+	Name string
+	// Guest is the TCP port the service listens on inside the sandbox.
+	Guest int
 }
 
 // Tmpfs is one declared tmpfs mount.
@@ -144,6 +159,10 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 	// Any declared secret also turns on TLS inspection; msb does this
 	// itself when a secret is declared, so no extra flag is needed here.
 
+	for _, name := range sortedPortNames(cfg) {
+		t.Ports = append(t.Ports, DeclaredPort{Name: name, Guest: cfg.Ports[name].Guest})
+	}
+
 	t.SecretNames = sortedSecretNames(cfg)
 	for _, name := range t.SecretNames {
 		t.Secrets = append(t.Secrets, cfg.Secrets[name])
@@ -154,6 +173,16 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 
 	t.Options = options
 	return t, nil
+}
+
+// sortedPortNames returns the declared port names in name order.
+func sortedPortNames(cfg config.Config) []string {
+	names := make([]string, 0, len(cfg.Ports))
+	for name := range cfg.Ports {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // CheckSecretEnv verifies that every declared secret's host environment

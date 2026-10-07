@@ -198,6 +198,25 @@ type OwnedMount struct {
 	Size string
 }
 
+// Publish is one published guest TCP service: the guest port, published on
+// the host loopback at HostPort. The loopback binding is part of the
+// declaration, so the same spec string serves both creation and reporting.
+type Publish struct {
+	// HostPort is the host loopback port the guest service is published on.
+	HostPort int
+	// GuestPort is the TCP port the service listens on inside the sandbox.
+	GuestPort int
+}
+
+// spec renders the publish specification msb create receives:
+// 127.0.0.1:<host>:<guest>. The spelling follows the loopback declarations
+// observed in real-host port probes (msb 0.7.3 accepted two sandboxes that
+// both declared 127.0.0.1:<port>); the flag name itself is UNVERIFIED on a
+// real host and is pinned here so a later probe can confirm or correct it.
+func (p Publish) spec() string {
+	return fmt.Sprintf("127.0.0.1:%d:%d", p.HostPort, p.GuestPort)
+}
+
 // CreateOptions carries everything `msb create` receives for one sandbox.
 type CreateOptions struct {
 	// Name is the unique sandbox name.
@@ -236,6 +255,9 @@ type CreateOptions struct {
 	SecretConf string
 	// NoNet disables all network access (egress "none" in sbx terms).
 	NoNet bool
+	// Publish lists the guest TCP services published on the host loopback,
+	// in translation order. Only persistent sandboxes publish ports.
+	Publish []Publish
 }
 
 // ListEntry is one record of `msb ls --format json`. The listing carries
@@ -269,8 +291,9 @@ func (c CLI) List(ctx context.Context) ([]ListEntry, error) {
 // the active configuration while the sandbox runs, and the recorded one
 // when it is stopped (observed on msb 0.7.3: active_config is null when
 // stopped, while config keeps the labels, image digest, and declared
-// ports). Ports keep their raw JSON: their report shape is not yet pinned
-// by a real-host probe, and the port registry arrives with a later release.
+// ports). Ports keep their raw JSON — the report's exact shape is not yet
+// pinned by a real-host probe — and are read tolerantly by PublishedPorts
+// (ports.go), which fails closed on content it cannot parse.
 type SandboxConfig struct {
 	ManifestDigest string            `json:"manifest_digest"`
 	Labels         map[string]string `json:"labels"`
@@ -500,6 +523,9 @@ func CreateArgs(o CreateOptions) []string {
 	}
 	if o.NoNet {
 		args = append(args, "--no-net")
+	}
+	for _, p := range o.Publish {
+		args = append(args, "--publish", p.spec())
 	}
 	if o.SecretConf != "" {
 		args = append(args, "--secret-conf", o.SecretConf)

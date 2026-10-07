@@ -6,6 +6,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -91,20 +92,20 @@ func fixtureRepoFrom(t *testing.T, fixture string) string {
 // package.
 const fixtureRestrictedDir = "../../fixtures/restricted-cli"
 
-// TestFixtureRestrictedFailsClosedPorts copies the complete fixture and
+// TestFixtureRestrictedFailsClosedImageCheck copies the complete fixture and
 // checks that `sbx run` refuses it before any backend call once it declares
-// a not-yet-supported field: [ports] is rejected by strict configuration
+// a not-yet-supported field: image_check is rejected by strict configuration
 // parsing, before any backend call. Fail-closed is the contract; which
 // gate fires first may change as the remaining features land.
-func TestFixtureRestrictedFailsClosedPorts(t *testing.T) {
+func TestFixtureRestrictedFailsClosedImageCheck(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// The verbatim fixture is fully supported now; the variant adds [ports],
-	// which no build of sbx translates yet, derived from the fixture file so
-	// the two cannot drift.
+	// The verbatim fixture is fully supported now; the variant adds
+	// image_check, which no build of sbx translates yet, derived from the
+	// fixture file so the two cannot drift.
 	variant := testsupport.FixtureTOML(t,
-		filepath.Join(fixtureRestrictedDir, "sbx.toml")) + "\n[ports]\n"
+		filepath.Join(fixtureRestrictedDir, "sbx.toml")) + "\nimage_check = \"image-check.sh\"\n"
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -274,4 +275,109 @@ func fixtureVolumeNamespace(t *testing.T, worktree string) string {
 		t.Fatal(err)
 	}
 	return identity.VolumeNamespace(info.CommonDir)
+}
+
+// fixtureStatefulDir is the stateful web fixture's path relative to this
+// package.
+const fixtureStatefulDir = "../../fixtures/stateful-web"
+
+// TestFixtureStatefulWebUpAndPorts copies the complete fixture into two
+// worktrees of one repository and checks `sbx up` across them: identity
+// reuse within a worktree, distinct identities and loopback ports across
+// worktrees, and each create's --publish carrying the reserved port.
+//
+// The image_check line is stripped until ticket 10 lands: the fixture is
+// verbatim, and the variant derives from the fixture file so the two
+// cannot drift.
+func TestFixtureStatefulWebUpAndPorts(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	repo := t.TempDir()
+	git(t, repo, "init", "-b", "main")
+	git(t, repo, "config", "user.name", "sbx test")
+	git(t, repo, "config", "user.email", "sbx@example.com")
+	if err := os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", "seed.txt")
+	git(t, repo, "commit", "-m", "seed")
+
+	variant := testsupport.FixtureWithoutLines(t,
+		filepath.Join(fixtureStatefulDir, "sbx.toml"), "image_check")
+	worktrees := make([]string, 2)
+	for i := range worktrees {
+		wt := filepath.Join(t.TempDir(), fmt.Sprintf("wt%d", i+1))
+		git(t, repo, "worktree", "add", wt, "-b", fmt.Sprintf("feature%d", i+1))
+		copyFixture(t, fixtureStatefulDir, wt)
+		if err := os.WriteFile(filepath.Join(wt, "sbx.toml"), []byte(variant), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		worktrees[i] = wt
+	}
+
+	ids := make([]string, 2)
+	ports := make([]string, 2)
+	for i, wt := range worktrees {
+		// The first up creates; the second reuses the same identity.
+		for round := 0; round < 2; round++ {
+			code, stdout, stderr := sbxUp(t, wt)
+			if code != 0 {
+				t.Fatalf("up in worktree %d (round %d) failed: %s", i+1, round+1, stderr)
+			}
+			id := sandboxIdentityOf(t, wt)
+			if !strings.Contains(stdout, "persistent sandbox: "+id) {
+				t.Errorf("up in worktree %d does not report the identity:\n%s", i+1, stdout)
+			}
+			if round == 0 && !strings.Contains(stdout, "created") {
+				t.Errorf("first up in worktree %d does not report creation:\n%s", i+1, stdout)
+			}
+			if round == 1 && !strings.Contains(stdout, "already running") {
+				t.Errorf("second up in worktree %d does not report reuse:\n%s", i+1, stdout)
+			}
+			// The published endpoint appears in both creation and reuse
+			// reports; the port is stable per worktree.
+			port := ""
+			for _, line := range strings.Split(stdout, "\n") {
+				if after, ok := strings.CutPrefix(line, "web: 127.0.0.1:"); ok {
+					port = strings.SplitN(after, " ", 2)[0]
+				}
+			}
+			if port == "" {
+				t.Errorf("up in worktree %d (round %d) reports no web endpoint:\n%s", i+1, round+1, stdout)
+			}
+			ports[i] = port
+			ids[i] = id
+		}
+	}
+	if ids[0] == ids[1] {
+		t.Errorf("both worktrees derived the identity %s", ids[0])
+	}
+	if ports[0] == "" || ports[0] == ports[1] {
+		t.Errorf("worktree ports = %v, want distinct loopback ports", ports)
+	}
+
+	// Every create published its port on the loopback.
+	var published []string
+	for _, c := range fake.Calls() {
+		if c.Args[0] != "create" {
+			continue
+		}
+		for i, a := range c.Args {
+			if a == "--publish" {
+				published = append(published, c.Args[i+1])
+			}
+		}
+	}
+	if len(published) != 2 {
+		t.Fatalf("fake msb saw %d --publish flags across creates, want 2", len(published))
+	}
+	for i, spec := range published {
+		if !strings.HasPrefix(spec, "127.0.0.1:") || !strings.HasSuffix(spec, ":4000") {
+			t.Errorf("create %d published %q, want 127.0.0.1:<port>:4000", i+1, spec)
+		}
+	}
+	if published[0] == published[1] {
+		t.Errorf("both creates published %q", published[0])
+	}
 }

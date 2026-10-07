@@ -18,14 +18,31 @@ import (
 // supportedFields describes the configuration surface this build translates.
 // Later releases extend it; anything else must be rejected explicitly rather
 // than silently ignored.
+<<<<<<< HEAD
 const supportedFields = `image, cpus, memory, shell, image_check, [workspace],
 [mounts], [volumes], [env], [secrets], [bootstrap], [network] (with allow
 and dns_nameservers), and [build]`
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
+[volumes], [env], [secrets], [bootstrap], [network] (with allow and
+dns_nameservers), and [build]`
+=======
+const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
+[volumes], [ports], [env], [secrets], [bootstrap], [network] (with allow and
+dns_nameservers), and [build]`
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 
 // notYetSupported are field names that the spec defines but this build does
 // not translate yet. Declaring any of them is an error, not a warning.
 var notYetSupported = map[string]struct{}{
+<<<<<<< HEAD
 	"ports": {},
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+	"ports":       {},
+	"image_check": {},
+=======
+	"image_check": {},
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 }
 
 // Config is the validated content of one worktree's sbx.toml.
@@ -39,6 +56,7 @@ type Config struct {
 	Volumes   map[string]VolumeConfig `toml:"volumes"`
 	Env       map[string]string       `toml:"env"`
 	Secrets   map[string]SecretConfig `toml:"secrets"`
+	Ports     map[string]PortConfig   `toml:"ports"`
 	Network   NetworkConfig           `toml:"network"`
 	// ImageCheck is the optional path of the project-owned guest script
 	// that gates image use: it runs in an isolated sandbox from the image
@@ -124,6 +142,15 @@ type VolumeConfig struct {
 	Size string `toml:"size"`
 	// Quota limits a Project-scope directory volume.
 	Quota string `toml:"quota"`
+}
+
+// PortConfig is one [ports.<name>] entry: a named TCP guest service the
+// persistent sandbox publishes on a host loopback port. The host port is
+// never pinned in configuration; sbx reserves one from 4001–4099 at
+// creation.
+type PortConfig struct {
+	// Guest is the TCP port the service listens on inside the sandbox.
+	Guest int `toml:"guest"`
 }
 
 // SecretConfig is one [secrets.<name>] entry. The guest environment variable
@@ -233,6 +260,7 @@ func (c *Config) Validate() error {
 	problems = append(problems, c.validateMountPointConflicts()...)
 	problems = append(problems, c.validateEnv()...)
 	problems = append(problems, c.validateSecrets()...)
+	problems = append(problems, c.validatePorts()...)
 	problems = append(problems, c.Network.validate()...)
 	problems = append(problems, c.validateBuild()...)
 	if len(problems) > 0 {
@@ -421,6 +449,25 @@ func (c *Config) validateSecrets() []string {
 				problems = append(problems, fmt.Sprintf("secrets.%s: allow entry %q is not an exact domain or a \"*.\"-prefixed suffix of at least two labels", name, entry))
 			}
 		}
+	}
+	return problems
+}
+
+// validatePorts checks each [ports.<name>] entry: the name's shape, the
+// required guest port, and the egress="none" conflict — a network that
+// allows no traffic at all cannot serve a published port.
+func (c *Config) validatePorts() []string {
+	var problems []string
+	for name, p := range c.Ports {
+		if !volumeNameRe.MatchString(name) {
+			problems = append(problems, fmt.Sprintf("ports: name %q must match [a-z][a-z0-9_]*", name))
+		}
+		if p.Guest < 1 || p.Guest > 65535 {
+			problems = append(problems, fmt.Sprintf("ports.%s: guest is required and must be a TCP port between 1 and 65535", name))
+		}
+	}
+	if len(c.Ports) > 0 && c.Network.Egress == "none" {
+		problems = append(problems, `ports: declared ports are invalid with egress = "none", which allows no traffic at all`)
 	}
 	return problems
 }

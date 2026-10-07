@@ -5,6 +5,7 @@
 // recreates a drifted sandbox — that could destroy private data — and never
 // removes a Project volume or port reservation when removing a sandbox.
 //
+<<<<<<< HEAD
 // Image checks gate both paths here: the creation path runs the declared
 // check against the image's contents before creating, and an existing
 // sandbox's own image is checked even with --allow-stale, failing closed
@@ -14,6 +15,24 @@
 // any creation (ADR-0003). Bootstrap runs here: once after each creation,
 // recorded in host state only on success, and retried only through
 // `up --retry-bootstrap` (bootstrap.go).
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+// Image checks and published ports belong to later tickets: declaring
+// them already fails closed in configuration parsing, and the creation
+// path re-checks nothing strict parsing has already refused. Declared
+// Project volumes are checked for compatibility with the backend's
+// existing volumes before any creation (ADR-0003). Bootstrap runs here:
+// once after each creation, recorded in host state only on success, and
+// retried only through `up --retry-bootstrap` (bootstrap.go).
+=======
+// Declared Project volumes are checked for compatibility with the
+// backend's existing volumes before any creation (ADR-0003), and declared
+// ports are reserved before creation and reconciled with the backend's
+// inspection report after it (ports.go). Image checks belong to a later
+// ticket: declaring one already fails closed in configuration parsing.
+// Bootstrap runs here: once after each creation, recorded in host state
+// only on success, and retried only through `up --retry-bootstrap`
+// (bootstrap.go).
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 package cli
 
 import (
@@ -181,6 +200,10 @@ func runStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	} else {
 		fmt.Fprintf(stdout, "drift (up and exec refuse this; status does not):\n%s\n", renderDrift(drift))
 	}
+
+	// Published ports are reported read-only: what the backend says, and
+	// any registry discrepancy, without correcting or reserving.
+	reportPorts(id.Sandbox, s, stdout)
 
 	// Bootstrap state is reported like drift: never enforced here, and a
 	// changed definition is reported without counting as Creation drift.
@@ -461,6 +484,12 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			return "", bootstrapNotDeclared, err
 		}
 		defer cleanup()
+		// Declared ports are reserved — or reused from the registry — before
+		// anything is created; a failure here changes nothing at all.
+		assigns, err := reservePorts(ctx, box, p)
+		if err != nil {
+			return "", bootstrapNotDeclared, err
+		}
 		if err := box.Create(ctx, p.tr.Options); err != nil {
 			return "", bootstrapNotDeclared, err
 		}
@@ -473,8 +502,16 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		}); err != nil {
 			return "", bootstrapNotDeclared, err
 		}
+		// Once the sandbox exists, what msb inspect reports is authoritative:
+		// the registry is corrected to match, failing rather than taking a
+		// port another reservation holds. A failure here leaves the created
+		// sandbox in place — sbx never removes a partially created sandbox
+		// to retry a port.
+		if err := reconcileCreatedPorts(ctx, box, p); err != nil {
+			return "", bootstrapNotDeclared, err
+		}
 		if !p.cfg.BootstrapDeclared() {
-			return fmt.Sprintf("created from %s (image contents %s) and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), bootstrapNotDeclared, nil
+			return withPorts(fmt.Sprintf("created from %s (image contents %s) and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), assigns), bootstrapNotDeclared, nil
 		}
 		// Bootstrap runs in the new sandbox before anything else uses it.
 		// The marker binds its completion to this incarnation's created_at,
@@ -486,7 +523,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		if err := runBootstrap(ctx, box, p, s.CreatedAt, stdout, stderr); err != nil {
 			return "", bootstrapIncomplete, &bootstrapFailure{err}
 		}
-		return fmt.Sprintf("created from %s (image contents %s), bootstrapped, and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), bootstrapComplete, nil
+		return withPorts(fmt.Sprintf("created from %s (image contents %s), bootstrapped, and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), assigns), bootstrapComplete, nil
 	}
 
 	// A same-named sandbox exists: sbx touches it only when it carries the
@@ -497,6 +534,13 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	}
 	if !isOwned(s) {
 		return "", bootstrapNotDeclared, errUnowned(p.id.Sandbox)
+	}
+
+	// The sandbox exists, so its inspection report is authoritative: a
+	// stale registry entry is corrected here, on the mutating path, unless
+	// the correction would take a port another reservation holds.
+	if err := reconcilePorts(p, s); err != nil {
+		return "", bootstrapNotDeclared, err
 	}
 
 	drift, err := driftReport(ctx, box, p)
@@ -542,6 +586,14 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			action = "already running"
 		} else {
 			action = "started; its state and volumes were kept"
+		}
+	}
+
+	if len(p.tr.Ports) > 0 {
+		// The reuse report names the endpoints inspection is authoritative
+		// for, exactly as a creation report does.
+		if actual, perr := s.PortsOf(); perr == nil && len(actual) > 0 {
+			action += "; published ports:\n" + formatEndpoints(p.tr.Ports, actual)
 		}
 	}
 

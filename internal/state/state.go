@@ -1,8 +1,9 @@
 // Package state holds sbx's host state: the machine-wide host state
 // directory with the creation-time snapshots of persistent sandboxes,
-// Bootstrap completion markers (bootstrap.go), and per-sandbox
-// cross-process locks (lock.go). Port reservations and image-check
-// successes join in later releases. Snapshots capture what a sandbox was
+// Bootstrap completion markers (bootstrap.go), the machine-wide port
+// registry (ports.go), and per-sandbox cross-process locks (lock.go).
+// Image-check successes join in a later release. Snapshots capture what a
+// sandbox was
 // created from so sbx can report Creation drift without ever recreating a
 // sandbox that holds private data; markers record a Bootstrap success bound
 // to the sandbox incarnation that ran it (ADR-0002).
@@ -48,6 +49,10 @@ type Definition struct {
 	// Options is the msb creation settings, normalized so the
 	// generated-file paths never participate in comparisons.
 	Options msb.CreateOptions `json:"options"`
+	// Ports are the declared named guest ports, in name order. The host
+	// loopback bindings live in the port registry, not here: they can be
+	// corrected without recreation, so they are not creation-time settings.
+	Ports []translate.DeclaredPort `json:"ports,omitempty"`
 	// SecretConfYAML is the generated secret-name map (names and host
 	// variable references only, never values).
 	SecretConfYAML string `json:"secret_conf_yaml,omitempty"`
@@ -59,6 +64,7 @@ type Definition struct {
 func DefinitionOf(tr translate.Translation) Definition {
 	return Definition{
 		Options:        normalizeOptions(tr.Options),
+		Ports:          tr.Ports,
 		SecretConfYAML: tr.SecretConfYAML,
 		FsConfYAML:     tr.FsConfYAML,
 	}
@@ -69,6 +75,10 @@ func DefinitionOf(tr translate.Translation) Definition {
 func normalizeOptions(o msb.CreateOptions) msb.CreateOptions {
 	o.SecretConf = ""
 	o.FsConf = ""
+	// The host loopback bindings are registry data, not creation settings:
+	// they are chosen at creation and can be corrected later, so they
+	// never participate in drift. Which guest ports are declared does.
+	o.Publish = nil
 	return o
 }
 
@@ -192,6 +202,7 @@ func Drift(created Snapshot, current Definition, currentDigest string) []string 
 		{"project volumes", renderNamed(old.Options.Named), renderNamed(now.Options.Named)},
 		{"sandbox volumes", renderOwned(old.Options.Owned), renderOwned(now.Options.Owned)},
 		{"environment", renderList(old.Options.Env), renderList(now.Options.Env)},
+		{"ports", renderPorts(old.Ports), renderPorts(now.Ports)},
 		{"network policy", renderNetwork(old.Options), renderNetwork(now.Options)},
 		{"secret map", old.SecretConfYAML, now.SecretConfYAML},
 		{"filesystem configuration (tmpfs mounts)", old.FsConfYAML, now.FsConfYAML},
@@ -264,6 +275,19 @@ func renderOwned(owned []msb.OwnedMount) string {
 			spec += " (disk, " + o.Size + ")"
 		}
 		parts = append(parts, spec)
+	}
+	return "[" + strings.Join(parts, "; ") + "]"
+}
+
+// renderPorts renders the declared named guest ports. An absent list
+// renders as "[]" so absence and emptiness differ from a non-empty list.
+func renderPorts(ports []translate.DeclaredPort) string {
+	if len(ports) == 0 {
+		return "[]"
+	}
+	parts := make([]string, 0, len(ports))
+	for _, p := range ports {
+		parts = append(parts, fmt.Sprintf("%s: guest %d", p.Name, p.Guest))
 	}
 	return "[" + strings.Join(parts, "; ") + "]"
 }

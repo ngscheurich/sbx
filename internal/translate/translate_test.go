@@ -387,6 +387,47 @@ egress = "none"
 	}
 }
 
+// TestSandboxDeclaredPorts checks that declared ports travel with the
+// translation in name order, and that no host port is chosen at
+// translation time: reserving one is a state write the Plan must never do.
+func TestSandboxDeclaredPorts(t *testing.T) {
+	root := t.TempDir()
+	cfg := load(t, `
+image = "alpine:3.20"
+cpus = 1
+memory = "1G"
+
+[network]
+egress = "public"
+
+[ports.web]
+guest = 4000
+
+[ports.metrics]
+guest = 9090
+`)
+	tr, err := Sandbox(info(root), cfg, "persistent")
+	if err != nil {
+		t.Fatalf("Sandbox: %v", err)
+	}
+	if len(tr.Ports) != 2 || tr.Ports[0].Name != "metrics" || tr.Ports[0].Guest != 9090 || tr.Ports[1].Name != "web" || tr.Ports[1].Guest != 4000 {
+		t.Errorf("Ports = %+v, want metrics:9090 then web:4000 in name order", tr.Ports)
+	}
+	if len(tr.Options.Publish) != 0 {
+		t.Errorf("Options.Publish = %+v, want empty: the host port is reserved at creation, never at translation", tr.Options.Publish)
+	}
+
+	// A disposable run publishes no ports; the declared ports remain
+	// visible for reports but never reach the run's options.
+	run, err := Sandbox(info(root), cfg, "disposable")
+	if err != nil {
+		t.Fatalf("Sandbox disposable: %v", err)
+	}
+	if len(run.Options.Publish) != 0 {
+		t.Errorf("disposable Options.Publish = %+v, want none", run.Options.Publish)
+	}
+}
+
 func TestSandboxEnvSortedAndWorkspaceDefault(t *testing.T) {
 	root := t.TempDir()
 	cfg := load(t, `

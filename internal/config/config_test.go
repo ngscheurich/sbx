@@ -376,7 +376,14 @@ func TestLoadRejectsEmptyBootstrap(t *testing.T) {
 
 func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	tests := map[string]string{
+<<<<<<< HEAD
 		"ports": "[ports.web]\nguest = 4000",
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+		"ports":       "[ports.web]\nguest = 4000",
+		"image_check": "image_check = \"check.sh\"",
+=======
+		"image_check": "image_check = \"check.sh\"",
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -394,6 +401,7 @@ func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 // TestLoadImageCheck checks that image_check parses as the project-owned
 // guest script's path, and that declaring it empty is rejected: an empty
 // declaration would silently mean "no check".
@@ -410,6 +418,63 @@ func TestLoadImageCheck(t *testing.T) {
 	_, err = Load(write(t, "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"\"\n\n[network]\negress = \"public\"\n"))
 	if err == nil || !strings.Contains(err.Error(), "image_check") {
 		t.Errorf("empty image_check error = %v, want it to name image_check", err)
+||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+=======
+func TestLoadPorts(t *testing.T) {
+	cfg, err := Load(write(t, minimal+`
+[ports.web]
+guest = 4000
+
+[ports.metrics]
+guest = 9090
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Ports) != 2 {
+		t.Fatalf("Ports = %v", cfg.Ports)
+	}
+	if got := cfg.Ports["web"].Guest; got != 4000 {
+		t.Errorf("ports.web.guest = %d, want 4000", got)
+	}
+	if got := cfg.Ports["metrics"].Guest; got != 9090 {
+		t.Errorf("ports.metrics.guest = %d, want 9090", got)
+	}
+}
+
+func TestLoadPortValidationFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{"missing guest", minimal + "\n[ports.web]\n", "ports.web: guest is required"},
+		{"guest too low", minimal + "\n[ports.web]\nguest = 0", "ports.web: guest is required"},
+		{"guest too high", minimal + "\n[ports.web]\nguest = 65536", "ports.web: guest is required"},
+		{"bad name", minimal + "\n[ports.Web]\nguest = 4000", `ports: name "Web"`},
+		{"egress none", `
+image = "alpine"
+cpus = 1
+memory = "1G"
+
+[network]
+egress = "none"
+
+[ports.web]
+guest = 4000
+`, `ports: declared ports are invalid with egress = "none"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(write(t, tt.content))
+			if err == nil {
+				t.Fatalf("Load succeeded for invalid ports:\n%s", tt.content)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErr)
+			}
+		})
+>>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	}
 }
 
