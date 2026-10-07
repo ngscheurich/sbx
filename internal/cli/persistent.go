@@ -254,7 +254,7 @@ func runStop(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if !isOwned(s) {
 		return persistentFatal(errUnowned(id.Sandbox), stderr)
 	}
-	if entry.Status != "running" {
+	if !msb.IsRunning(entry.Status) {
 		fmt.Fprintf(stdout, "persistent sandbox: %s\nalready stopped; its state and volumes are kept\n", id.Sandbox)
 		return exitOK
 	}
@@ -504,7 +504,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	}
 
 	var action string
-	if entry.Status == "running" {
+	if msb.IsRunning(entry.Status) {
 		action = "already running"
 	} else {
 		// Whether a stopped sandbox's msb start re-reads a --secret from its
@@ -515,9 +515,19 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox is stopped and its configuration declares secrets; whether `msb start` re-reads a secret from its environment is not yet verified on a real host, so sbx refuses secret-bearing restarts until a later release confirms the behavior")
 		}
 		if err := box.Start(ctx, p.id.Sandbox); err != nil {
-			return "", bootstrapNotDeclared, err
+			// The listing can lag behind the backend: a sandbox that is up may
+			// not read as "running" there (observed on a real host — msb ls
+			// reported "Running", which the comparison now handles, and a
+			// start was still attempted in the gap). msb's own refusal is the
+			// authoritative evidence that the sandbox is up, which is all
+			// ensureRunning needs.
+			if !errors.Is(err, msb.ErrAlreadyRunning) {
+				return "", bootstrapNotDeclared, err
+			}
+			action = "already running"
+		} else {
+			action = "started; its state and volumes were kept"
 		}
-		action = "started; its state and volumes were kept"
 	}
 
 	boot, err := assessBootstrap(p, s.CreatedAt)

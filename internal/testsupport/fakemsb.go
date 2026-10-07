@@ -35,6 +35,9 @@ import (
 //	FAKE_MSB_RM_FAIL            set to make "remove" fail
 //	FAKE_MSB_VOLUMES_FAIL       set to make "volumes" fail
 //	FAKE_MSB_VOLUMES_MALFORMED  set to make "volumes" print non-JSON
+//	FAKE_MSB_STATUS_OVERRIDE    status word that "ls" and "inspect" report
+//	                            regardless of the records' real state (models
+//	                            a listing/reality mismatch)
 //
 // The fake is stateful: created sandboxes live as record files under
 // $FAKE_MSB_LOG/store/sbox-<name>, so ls, inspect, start, stop, and remove
@@ -318,6 +321,11 @@ ls)
     name=${f##*/sbox-}
     image=$(sed -n 's/^image=//p' "$f")
     status=$(sed -n 's/^status=//p' "$f")
+    [ -n "$FAKE_MSB_STATUS_OVERRIDE" ] && status=$FAKE_MSB_STATUS_OVERRIDE
+    case "$status" in
+    running) status=Running ;;
+    stopped) status=Stopped ;;
+    esac
     created=$(sed -n 's/^created_at=//p' "$f")
     if [ "$first" = 0 ]; then
       out="$out,"
@@ -333,14 +341,27 @@ inspect)
   status=$(sed -n 's/^status=//p' "$f")
   created=$(sed -n 's/^created_at=//p' "$f")
   cfg=$(json_config "$f")
+  # The internal state check reads the record's own word; the reported
+  # status is capitalized afterward, the way the real msb spells it.
   if [ "$status" = "running" ]; then
     active="$cfg"
   else
     active="null"
   fi
+  [ -n "$FAKE_MSB_STATUS_OVERRIDE" ] && status=$FAKE_MSB_STATUS_OVERRIDE
+  case "$status" in
+  running) status=Running ;;
+  stopped) status=Stopped ;;
+  esac
   printf '{"name":"%s","status":"%s","created_at":"%s","active_config":%s,"config":%s}\n' "$2" "$status" "$created" "$active" "$cfg"
   ;;
 start)
+  # A running sandbox refuses to start, the way the real msb does
+  # (observed on msb 0.7.6): "sandbox still running ... already running".
+  if [ "$(sed -n 's/^status=//p' "$(record_path "$2")" 2>/dev/null)" = "running" ]; then
+    echo "error: sandbox still running: cannot start sandbox '$2': already running" >&2
+    exit 1
+  fi
   set_status "$2" running
   ;;
 stop)

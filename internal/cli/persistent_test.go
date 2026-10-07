@@ -251,8 +251,43 @@ func TestExecRunsGuestCommandAndLeavesSandboxRunning(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
-	if !strings.Contains(stdout, "status: running") {
+	if !strings.Contains(stdout, "status: Running") {
 		t.Errorf("sandbox did not stay running:\n%s", stdout)
+	}
+}
+
+// TestExecSurvivesListingStatusMismatch checks that a live sandbox is used,
+// never started, even when the backend's listing reports its status under a
+// word other than "running" (observed on a real msb 0.7.6 host: `msb ls`
+// reported a live sandbox and `msb start` refused it as already running).
+// msb's own refusal is authoritative: the sandbox is up, so exec proceeds.
+func TestExecSurvivesListingStatusMismatch(t *testing.T) {
+	worktree, fake := persistentFixture(t, persistentTOML)
+	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+		t.Fatalf("up failed: %s", stderr)
+	}
+	t.Setenv("FAKE_MSB_STATUS_OVERRIDE", "created")
+
+	code, stdout, stderr := sbxRun(t, worktree, []string{"exec", "--", "echo", "hello"}, nil)
+	if code != 0 {
+		t.Fatalf("exec failed on a live sandbox the listing misreported: %s", stderr)
+	}
+	if !strings.Contains(stdout, "guest-stdout") {
+		t.Errorf("guest output missing:\n%s", stdout)
+	}
+	// The stale listing sent exec down the start path, where msb refused it
+	// as already running; exec treated that as the sandbox being up.
+	starts := 0
+	for _, c := range fake.Calls() {
+		if c.Args[0] == "start" {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Errorf("exec recorded %d start calls, want the one refused attempt", starts)
+	}
+	if strings.Contains(stderr, "sbx:") {
+		t.Errorf("exec surfaced an error for a live sandbox:\n%s", stderr)
 	}
 }
 
@@ -628,7 +663,7 @@ func TestStopKeepsState(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
-	for _, want := range []string{"status: stopped", "drift: none"} {
+	for _, want := range []string{"status: Stopped", "drift: none"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("status of the stopped sandbox is missing %q:\n%s", want, stdout)
 		}
@@ -699,7 +734,7 @@ func TestStatusIsReadOnly(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
-	for _, want := range []string{"persistent sandbox: " + id, "status: running", "drift: none"} {
+	for _, want := range []string{"persistent sandbox: " + id, "status: Running", "drift: none"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("status output is missing %q:\n%s", want, stdout)
 		}

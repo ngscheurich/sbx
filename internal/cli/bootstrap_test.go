@@ -149,7 +149,7 @@ func TestUpBootstrapFailureStaysIncomplete(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
-	for _, want := range []string{"status: running", "bootstrap: incomplete"} {
+	for _, want := range []string{"status: Running", "bootstrap: incomplete"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("status is missing %q:\n%s", want, stdout)
 		}

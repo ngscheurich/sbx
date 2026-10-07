@@ -311,13 +311,30 @@ func (c CLI) Inspect(ctx context.Context, name string) (Sandbox, error) {
 	return s, nil
 }
 
+// ErrAlreadyRunning reports that msb refused to start a sandbox because it
+// is already up (observed on msb 0.7.6: "error: sandbox still running:
+// cannot start sandbox '<name>': already running"). Callers treat it as the
+// sandbox being up, never as a failure.
+var ErrAlreadyRunning = errors.New("sandbox is already running")
+
 // Start runs `msb start <name>`: a stopped sandbox keeps its volumes and
 // configuration, so starting is not creation and never adopts anything.
 func (c CLI) Start(ctx context.Context, name string) error {
 	if _, err := c.run(ctx, "start", name); err != nil {
+		if strings.Contains(err.Error(), "already running") {
+			return fmt.Errorf("starting sandbox %s: %w", name, ErrAlreadyRunning)
+		}
 		return fmt.Errorf("starting sandbox %s: %w", name, err)
 	}
 	return nil
+}
+
+// IsRunning reports whether a listing or inspection status word means the
+// sandbox is up. msb capitalizes its status words — `msb ls --format json`
+// reports "Running" for a live sandbox (observed on msb 0.7.6) — so the
+// comparison ignores case.
+func IsRunning(status string) bool {
+	return strings.EqualFold(status, "running")
 }
 
 // Stop runs `msb stop <name>`: the sandbox keeps its state, ready to start

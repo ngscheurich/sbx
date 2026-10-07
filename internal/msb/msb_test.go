@@ -607,7 +607,7 @@ func TestPersistentLifecycleRoundTrip(t *testing.T) {
 	if len(entries) != 1 || entries[0].Name != "app-main-12345678" {
 		t.Fatalf("list reported %+v", entries)
 	}
-	if entries[0].Status != "running" {
+	if !IsRunning(entries[0].Status) {
 		t.Errorf("a fresh sandbox is booted, status = %q", entries[0].Status)
 	}
 
@@ -617,7 +617,7 @@ func TestPersistentLifecycleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect: %v", err)
 	}
-	if box2.Status != "running" {
+	if !IsRunning(box2.Status) {
 		t.Errorf("status = %q, want running", box2.Status)
 	}
 	if box2.ActiveConfig == nil {
@@ -652,7 +652,7 @@ func TestPersistentLifecycleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect after start: %v", err)
 	}
-	if started.Status != "running" || started.ActiveConfig == nil {
+	if !IsRunning(started.Status) || started.ActiveConfig == nil {
 		t.Errorf("started sandbox = %+v", started)
 	}
 
