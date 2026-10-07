@@ -67,3 +67,11 @@ A difference between a persistent sandbox's creation-time settings and the curre
 
 **Plan**:
 A side-effect-free view of sbx's intended actions and backend translation, including tentative ports and redacted secrets.
+
+**Plain output**:
+The ANSI-free bytes sbx writes — what a pipe receives and what a terminal shows under `NO_COLOR`; byte-identical to sbx's output before styling existed.
+_Avoid_: Raw output, unstyled output
+
+**Styled output**:
+The same content as Plain output with color and emphasis added as decoration; never the only carrier of a meaning that words do not already state.
+_Avoid_: Rich output, pretty output
