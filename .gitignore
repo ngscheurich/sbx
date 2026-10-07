@@ -1,3 +1,4 @@
-/bin/
 /.scratch/
+/.worktrees/
+/bin/
 /mise.local.toml
