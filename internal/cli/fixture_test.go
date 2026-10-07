@@ -104,7 +104,7 @@ func TestFixtureRestrictedFailsClosedPorts(t *testing.T) {
 	// which no build of sbx translates yet, derived from the fixture file so
 	// the two cannot drift.
 	variant := testsupport.FixtureTOML(t,
-		filepath.Join(fixtureRestrictedDir, "sbx.toml"), "[ports]")
+		filepath.Join(fixtureRestrictedDir, "sbx.toml")) + "\n[ports]\n"
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
 		t.Fatal(err)
 	}

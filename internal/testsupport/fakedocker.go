@@ -7,7 +7,8 @@ import (
 )
 
 // fakeDockerSh is a POSIX shell script that stands in for the docker CLI. It
-// records every invocation in the same call.<n> layout as the fake msb, then
+// records every invocation in the same call.<n> layout as the fake msb —
+// the observed MSB_BACKEND value, then one NUL-separated argument — and then
 // behaves according to FAKE_DOCKER_* variables:
 //
 //	FAKE_DOCKER_BUILD_FAIL    set to make "build" fail
@@ -25,8 +26,8 @@ dir="${FAKE_DOCKER_LOG:?}"
 n=0
 while [ -f "$dir/call.$n" ]; do n=$((n+1)); done
 {
-  echo "MSB_BACKEND=${MSB_BACKEND:-}"
-  for a in "$@"; do printf '%s\n' "$a"; done
+  printf 'MSB_BACKEND=%s\0' "${MSB_BACKEND:-}"
+  for a in "$@"; do printf '%s\0' "$a"; done
 } > "$dir/call.$n"
 case "$1" in
 build)

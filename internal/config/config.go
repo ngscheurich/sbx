@@ -19,14 +19,13 @@ import (
 // Later releases extend it; anything else must be rejected explicitly rather
 // than silently ignored.
 const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
-[volumes], [env], [secrets], [network] (with allow and dns_nameservers),
-and [build]`
+[volumes], [env], [secrets], [bootstrap], [network] (with allow and
+dns_nameservers), and [build]`
 
 // notYetSupported are field names that the spec defines but this build does
 // not translate yet. Declaring any of them is an error, not a warning.
 var notYetSupported = map[string]struct{}{
 	"ports":       {},
-	"bootstrap":   {},
 	"image_check": {},
 }
 
@@ -45,7 +44,8 @@ type Config struct {
 	// Build is the optional [build] recipe; nil means the image is prebuilt
 	// and may be pulled, while a declared recipe means `sbx build` builds
 	// and imports it and nothing else may.
-	Build *BuildConfig `toml:"build"`
+	Build     *BuildConfig    `toml:"build"`
+	Bootstrap BootstrapConfig `toml:"bootstrap"`
 }
 
 // BuildConfig is the optional [build] table: the Docker recipe for the
@@ -62,6 +62,22 @@ type BuildConfig struct {
 	// Platform is the target platform, defaulting to linux/<host
 	// architecture>.
 	Platform string `toml:"platform"`
+}
+
+// BootstrapConfig is the optional [bootstrap] table: guest shell code run
+// once in every new sandbox, through the configured shell in the Workspace.
+// Editing it never causes Creation drift; a changed definition is reported
+// against the recorded completion instead.
+type BootstrapConfig struct {
+	// Run is the guest shell code.
+	Run string `toml:"run"`
+}
+
+// BootstrapDeclared reports whether the configuration carries a Bootstrap
+// definition. A declared-but-empty run is rejected at load, so a non-empty
+// Run here always names real guest code.
+func (c Config) BootstrapDeclared() bool {
+	return strings.TrimSpace(c.Bootstrap.Run) != ""
 }
 
 // WorkspaceConfig is the optional [workspace] table. An absent table keeps
@@ -137,6 +153,9 @@ func Load(path string) (Config, error) {
 	}
 	if err := strictFields(md); err != nil {
 		return Config{}, err
+	}
+	if md.IsDefined("bootstrap") && strings.TrimSpace(cfg.Bootstrap.Run) == "" {
+		return Config{}, fmt.Errorf("sbx.toml: bootstrap.run is required when [bootstrap] is declared; it is the guest shell code run once in every new sandbox")
 	}
 	cfg.applyDefaults()
 	if err := cfg.Validate(); err != nil {
