@@ -334,11 +334,49 @@ egress = "public"
 	}
 }
 
+func TestLoadBootstrap(t *testing.T) {
+	cfg, err := Load(write(t, minimal+`
+[bootstrap]
+run = "echo bootstrapped > /workspace/.bootstrapped"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.BootstrapDeclared() {
+		t.Error("a loaded [bootstrap] is not reported as declared")
+	}
+	if want := "echo bootstrapped > /workspace/.bootstrapped"; cfg.Bootstrap.Run != want {
+		t.Errorf("Bootstrap.Run = %q, want %q", cfg.Bootstrap.Run, want)
+	}
+
+	bare, err := Load(write(t, minimal))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if bare.BootstrapDeclared() {
+		t.Error("a configuration without [bootstrap] is reported as declaring one")
+	}
+}
+
+func TestLoadRejectsEmptyBootstrap(t *testing.T) {
+	for _, content := range []string{
+		minimal + "\n[bootstrap]\n",
+		minimal + "\n[bootstrap]\nrun = \"  \"\n",
+	} {
+		_, err := Load(write(t, content))
+		if err == nil {
+			t.Fatalf("Load succeeded with an empty bootstrap:\n%s", content)
+		}
+		if !strings.Contains(err.Error(), "bootstrap.run") {
+			t.Errorf("error = %q, want it to name bootstrap.run", err.Error())
+		}
+	}
+}
+
 func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	tests := map[string]string{
 		"ports":       "[ports.web]\nguest = 4000",
 		"build":       "[build]\ncontext = \".\"",
-		"bootstrap":   "[bootstrap]\nrun = \"echo hi\"",
 		"image_check": "image_check = \"check.sh\"",
 	}
 	for name, content := range tests {

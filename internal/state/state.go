@@ -1,9 +1,11 @@
 // Package state holds sbx's host state: the machine-wide host state
-// directory and, in this slice, the creation-time snapshots of persistent
-// sandboxes (spec: port reservations, image-check successes, Bootstrap
-// completion markers, and locks join later releases). Snapshots capture
-// what a sandbox was created from so sbx can report Creation drift without
-// ever recreating a sandbox that holds private data (ADR-0002).
+// directory with the creation-time snapshots of persistent sandboxes,
+// Bootstrap completion markers (bootstrap.go), and per-sandbox
+// cross-process locks (lock.go). Port reservations and image-check
+// successes join in later releases. Snapshots capture what a sandbox was
+// created from so sbx can report Creation drift without ever recreating a
+// sandbox that holds private data; markers record a Bootstrap success bound
+// to the sandbox incarnation that ran it (ADR-0002).
 package state
 
 import (
@@ -146,24 +148,24 @@ func DeleteSnapshot(sandbox string) error {
 // writeFileAtomic writes data to path via a same-directory temporary and a
 // rename, so readers never observe a partial file.
 func writeFileAtomic(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".snapshot-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".atomic-*")
 	if err != nil {
-		return fmt.Errorf("writing the snapshot: %w", err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	tmp := f.Name()
 	defer os.Remove(tmp)
 	if _, err := f.Write(data); err != nil {
 		f.Close()
-		return fmt.Errorf("writing the snapshot: %w", err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("writing the snapshot: %w", err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := os.Chmod(tmp, 0o600); err != nil {
-		return fmt.Errorf("writing the snapshot: %w", err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("writing the snapshot: %w", err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return nil
 }

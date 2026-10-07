@@ -144,6 +144,10 @@ func (p Plan) Render() string {
 		}
 	}
 	fmt.Fprintf(&b, "  network: %s\n", describeNetwork(c.Network))
+	if c.BootstrapDeclared() {
+		fmt.Fprintf(&b, "  bootstrap: runs once in each new sandbox, as `%s -c` in the workspace;\n", c.Shell)
+		fmt.Fprintf(&b, "    `sbx status` reports its completion against the live sandbox\n")
+	}
 	if len(tr.SecretNames) > 0 {
 		fmt.Fprintf(&b, "  secrets (values never appear in this plan):\n")
 		for i, name := range tr.SecretNames {
@@ -159,8 +163,9 @@ func (p Plan) Render() string {
 	fmt.Fprintf(&b, "\nmsb arguments at creation:\n")
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
-	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift, image-check status, and tentative\n")
-	fmt.Fprintf(&b, "ports are added by later releases.\n")
+	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift, Bootstrap completion against a live\n")
+	fmt.Fprintf(&b, "sandbox (see `sbx status`), image-check status, and tentative ports are\n")
+	fmt.Fprintf(&b, "added by later releases.\n")
 	fmt.Fprintf(&b, "sbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
 }

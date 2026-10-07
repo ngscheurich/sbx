@@ -5,11 +5,13 @@
 // recreates a drifted sandbox — that could destroy private data — and never
 // removes a Project volume or port reservation when removing a sandbox.
 //
-// Bootstrap, image checks, and published ports belong to later tickets:
-// declaring them already fails closed in configuration parsing, and the
-// creation path re-checks nothing strict parsing has already refused.
-// Project volumes stay fail-closed through the shared preflight, because
-// their compatibility checks do not exist yet.
+// Image checks and published ports belong to later tickets: declaring them
+// already fails closed in configuration parsing, and the creation path
+// re-checks nothing strict parsing has already refused. Project volumes
+// stay fail-closed through the shared preflight, because their
+// compatibility checks do not exist yet. Bootstrap runs here: once after
+// each creation, recorded in host state only on success, and retried only
+// through `up --retry-bootstrap` (bootstrap.go).
 package cli
 
 import (
@@ -31,15 +33,18 @@ import (
 	"github.com/ngscheurich/sbx/internal/translate"
 )
 
-// runUp implements `sbx up [--allow-stale]`: create the persistent sandbox
-// once, or start it when stopped, and refuse drift unless --allow-stale.
+// runUp implements `sbx up [--allow-stale] [--retry-bootstrap]`: create the
+// persistent sandbox once, or start it when stopped, bootstrapping each new
+// sandbox, and refuse drift unless --allow-stale. An incomplete Bootstrap is
+// reported, never silently retried: only --retry-bootstrap runs it again.
 func runUp(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	flags, err := parsePersistentFlags("up", args, []string{"--allow-stale"})
+	flags, err := parsePersistentFlags("up", args, []string{"--allow-stale", "--retry-bootstrap"})
 	if err != nil {
 		fmt.Fprintf(stderr, "sbx: %v\n", err)
 		return exitUsage
 	}
 	allowStale := flags["--allow-stale"]
+	retryBootstrap := flags["--retry-bootstrap"]
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -48,11 +53,22 @@ func runUp(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return persistentFatal(err, stderr)
 	}
-	action, err := ensureRunning(ctx, msb.CLI{}, p, allowStale, stderr)
+	if retryBootstrap && !p.cfg.BootstrapDeclared() {
+		return persistentFatal(fmt.Errorf("up: --retry-bootstrap was given, but sbx.toml declares no [bootstrap]; there is nothing to retry"), stderr)
+	}
+	action, boot, err := ensureRunning(ctx, msb.CLI{}, p, allowStale, retryBootstrap, stdout, stderr)
 	if err != nil {
 		return persistentFatal(err, stderr)
 	}
+	if boot == bootstrapIncomplete {
+		// The sandbox itself may well be running; its Bootstrap never
+		// completed for this incarnation, and plain up never retries it.
+		return persistentFatal(fmt.Errorf("bootstrap for %s is incomplete: it never completed for this sandbox.\n\n%s", p.id.Sandbox, incompleteGuidance(p.id.Sandbox)), stderr)
+	}
 	fmt.Fprintf(stdout, "persistent sandbox: %s\n%s\n", p.id.Sandbox, action)
+	if boot == bootstrapChanged {
+		fmt.Fprintf(stdout, "bootstrap: complete, but the definition has changed since it ran; that is not Creation drift and does not block use\n")
+	}
 	return exitOK
 }
 
@@ -73,8 +89,17 @@ func runExec(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	if err != nil {
 		return persistentFatal(err, stderr)
 	}
-	if _, err := ensureRunning(ctx, msb.CLI{}, p, allowStale, stderr); err != nil {
+	_, boot, err := ensureRunning(ctx, msb.CLI{}, p, allowStale, false, stdout, stderr)
+	var bf *bootstrapFailure
+	switch {
+	case errors.As(err, &bf):
+		// The sandbox is up but its Bootstrap did not complete: exec
+		// still runs, with a warning, so the user can repair it.
+		fmt.Fprintf(stderr, "warning: %v\n", bf.err)
+	case err != nil:
 		return persistentFatal(err, stderr)
+	case boot == bootstrapIncomplete:
+		fmt.Fprintf(stderr, "warning: bootstrap for %s is incomplete; the command runs anyway so you can repair the sandbox. `sbx up --retry-bootstrap` runs the bootstrap definition again.\n", p.id.Sandbox)
 	}
 
 	guestArgv := argv
@@ -113,6 +138,9 @@ func runStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	}
 	if !exists {
 		fmt.Fprintf(stdout, "status: not created; run `sbx up` to create it\n")
+		if cfg.BootstrapDeclared() {
+			fmt.Fprintf(stdout, "bootstrap: declared; it will run after the sandbox is created\n")
+		}
 		return exitOK
 	}
 
@@ -150,6 +178,21 @@ func runStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintf(stdout, "drift: none\n")
 	} else {
 		fmt.Fprintf(stdout, "drift (up and exec refuse this; status does not):\n%s\n", renderDrift(drift))
+	}
+
+	// Bootstrap state is reported like drift: never enforced here, and a
+	// changed definition is reported without counting as Creation drift.
+	boot, err := assessBootstrap(p, s.CreatedAt)
+	if err != nil {
+		return persistentFatal(err, stderr)
+	}
+	switch boot {
+	case bootstrapComplete:
+		fmt.Fprintf(stdout, "bootstrap: complete (recorded for this sandbox's creation)\n")
+	case bootstrapChanged:
+		fmt.Fprintf(stdout, "bootstrap: complete, but the definition has changed since it ran; that is not Creation drift and does not block use\n")
+	case bootstrapIncomplete:
+		fmt.Fprintf(stdout, "bootstrap: incomplete — it never completed for this sandbox; plain `sbx up` will not retry it (use `sbx up --retry-bootstrap`, or repair with `sbx exec`)\n")
 	}
 	return exitOK
 }
@@ -274,8 +317,14 @@ func runRm(ctx context.Context, args []string, stdin io.Reader, stdout, stderr i
 	if err := state.DeleteSnapshot(id.Sandbox); err != nil {
 		return persistentFatal(err, stderr)
 	}
+	// The Bootstrap marker dies with the sandbox it belongs to, so a later
+	// sandbox of the same identity can never inherit a stale completion.
+	if err := state.DeleteBootstrapMarker(id.Sandbox); err != nil {
+		return persistentFatal(err, stderr)
+	}
 
 	fmt.Fprintf(stdout, "persistent sandbox: %s\nremoved.\n", id.Sandbox)
+	fmt.Fprintf(stdout, "its creation snapshot and Bootstrap completion record (if any) were cleared from host state.\n")
 	switch {
 	case errors.Is(snapErr, state.ErrNoSnapshot):
 		fmt.Fprintf(stdout, "its Sandbox volumes were removed with it (no creation snapshot recorded their list).\n")
@@ -368,31 +417,43 @@ func discoverIdentity(ctx context.Context) (identity.Identity, error) {
 }
 
 // ensureRunning brings the worktree's persistent sandbox to a running
-// state and returns the action taken, for the caller to report. Creation
-// happens only when the backend holds no same-named sandbox; an existing
-// one is started when stopped, checked for ownership and drift, and never
-// recreated.
-func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale bool, stderr io.Writer) (string, error) {
+// state and returns the action taken plus the Bootstrap state, for the
+// caller to report. Creation happens only when the backend holds no
+// same-named sandbox; an existing one is started when stopped, checked for
+// ownership and drift, and never recreated.
+//
+// The per-sandbox lock serializes creating, starting, and bootstrapping
+// across sbx processes; it is released when ensureRunning returns, so it is
+// never held while a user's guest command runs. Bootstrap runs once after
+// each creation; a later incomplete state is retried only when the caller
+// passed --retry-bootstrap, and completion is recorded only on success.
+func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, retryBootstrap bool, stdout, stderr io.Writer) (string, bootstrapState, error) {
+	lock, err := lockSandbox(p.id.Sandbox, stderr)
+	if err != nil {
+		return "", bootstrapNotDeclared, err
+	}
+	defer lock.Release()
+
 	if _, err := box.LocalContext(ctx); err != nil {
-		return "", err
+		return "", bootstrapNotDeclared, err
 	}
 	entry, exists, err := findSandbox(ctx, box, p.id.Sandbox)
 	if err != nil {
-		return "", err
+		return "", bootstrapNotDeclared, err
 	}
 
 	if !exists {
 		digest, err := ensureImage(ctx, box, p.cfg.Image)
 		if err != nil {
-			return "", err
+			return "", bootstrapNotDeclared, err
 		}
 		cleanup, err := materializeGeneratedFiles(&p.tr)
 		if err != nil {
-			return "", err
+			return "", bootstrapNotDeclared, err
 		}
 		defer cleanup()
 		if err := box.Create(ctx, p.tr.Options); err != nil {
-			return "", err
+			return "", bootstrapNotDeclared, err
 		}
 		// The snapshot is what drift detection compares against later; it
 		// is written only after creation succeeded, so a failed creation
@@ -401,46 +462,74 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale b
 			ImageDigest: digest,
 			Definition:  state.DefinitionOf(p.tr),
 		}); err != nil {
-			return "", err
+			return "", bootstrapNotDeclared, err
 		}
-		return fmt.Sprintf("created from %s (image contents %s) and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), nil
+		if !p.cfg.BootstrapDeclared() {
+			return fmt.Sprintf("created from %s (image contents %s) and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), bootstrapNotDeclared, nil
+		}
+		// Bootstrap runs in the new sandbox before anything else uses it.
+		// The marker binds its completion to this incarnation's created_at,
+		// so a later sandbox of the same identity never inherits it.
+		s, err := box.Inspect(ctx, p.id.Sandbox)
+		if err != nil {
+			return "", bootstrapIncomplete, err
+		}
+		if err := runBootstrap(ctx, box, p, s.CreatedAt, stdout, stderr); err != nil {
+			return "", bootstrapIncomplete, &bootstrapFailure{err}
+		}
+		return fmt.Sprintf("created from %s (image contents %s), bootstrapped, and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), bootstrapComplete, nil
 	}
 
 	// A same-named sandbox exists: sbx touches it only when it carries the
 	// sbx.managed label.
 	s, err := box.Inspect(ctx, p.id.Sandbox)
 	if err != nil {
-		return "", err
+		return "", bootstrapNotDeclared, err
 	}
 	if !isOwned(s) {
-		return "", errUnowned(p.id.Sandbox)
+		return "", bootstrapNotDeclared, errUnowned(p.id.Sandbox)
 	}
 
 	drift, err := driftReport(ctx, box, p)
 	if err != nil {
-		return "", err
+		return "", bootstrapNotDeclared, err
 	}
 	if len(drift) > 0 {
 		if !allowStale {
-			return "", fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\n\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(drift))
+			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\n\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(drift))
 		}
 		fmt.Fprintf(stderr, "warning: using %s despite drift:\n%s", p.id.Sandbox, renderDrift(drift))
 	}
 
+	var action string
 	if entry.Status == "running" {
-		return "already running", nil
+		action = "already running"
+	} else {
+		// Whether a stopped sandbox's msb start re-reads a --secret from its
+		// environment is UNVERIFIED (ticket 01's host check), so secret-bearing
+		// restarts are refused outright rather than risk a sandbox that runs
+		// with missing or stale secret wiring.
+		if len(p.cfg.Secrets) > 0 {
+			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox is stopped and its configuration declares secrets; whether `msb start` re-reads a secret from its environment is not yet verified on a real host, so sbx refuses secret-bearing restarts until a later release confirms the behavior")
+		}
+		if err := box.Start(ctx, p.id.Sandbox); err != nil {
+			return "", bootstrapNotDeclared, err
+		}
+		action = "started; its state and volumes were kept"
 	}
-	// Whether a stopped sandbox's msb start re-reads a --secret from its
-	// environment is UNVERIFIED (ticket 01's host check), so secret-bearing
-	// restarts are refused outright rather than risk a sandbox that runs
-	// with missing or stale secret wiring.
-	if len(p.cfg.Secrets) > 0 {
-		return "", fmt.Errorf("the persistent sandbox is stopped and its configuration declares secrets; whether `msb start` re-reads a secret from its environment is not yet verified on a real host, so sbx refuses secret-bearing restarts until a later release confirms the behavior")
+
+	boot, err := assessBootstrap(p, s.CreatedAt)
+	if err != nil {
+		return "", bootstrapNotDeclared, err
 	}
-	if err := box.Start(ctx, p.id.Sandbox); err != nil {
-		return "", err
+	if boot == bootstrapIncomplete && retryBootstrap {
+		if err := runBootstrap(ctx, box, p, s.CreatedAt, stdout, stderr); err != nil {
+			return action, bootstrapIncomplete, &bootstrapFailure{err}
+		}
+		action += "; bootstrap ran again and its completion was recorded"
+		boot = bootstrapComplete
 	}
-	return "started; its state and volumes were kept", nil
+	return action, boot, nil
 }
 
 // driftReport compares the sandbox's creation snapshot with the current
@@ -546,9 +635,7 @@ func renderDrift(drift []string) string {
 }
 
 // parsePersistentFlags checks that args carries nothing beyond the given
-// allowed flags, returning which of them are present. --retry-bootstrap is
-// rejected by name: Bootstrap is a later ticket's feature, and silently
-// ignoring it would hide an unrun step.
+// allowed flags, returning which of them are present.
 func parsePersistentFlags(cmd string, args []string, allowed []string) (map[string]bool, error) {
 	present := map[string]bool{}
 	allowedSet := map[string]bool{}
@@ -559,8 +646,6 @@ func parsePersistentFlags(cmd string, args []string, allowed []string) (map[stri
 		switch {
 		case allowedSet[a]:
 			present[a] = true
-		case a == "--retry-bootstrap":
-			return nil, fmt.Errorf("%s: --retry-bootstrap is not supported yet; Bootstrap arrives in a later sbx release", cmd)
 		default:
 			if len(allowed) == 0 {
 				return nil, fmt.Errorf("%s takes no arguments or flags, got %q", cmd, a)

@@ -15,9 +15,10 @@ import (
 )
 
 // fakeMsbSh is a POSIX shell script that stands in for the msb CLI. It
-// appends every invocation to $FAKE_MSB_LOG/call.<n> — the first line is the
-// observed MSB_BACKEND value, then one argument per line — and then behaves
-// according to FAKE_MSB_* variables:
+// appends every invocation to $FAKE_MSB_LOG/call.<n> — NUL-separated fields:
+// the observed MSB_BACKEND value, then one field per argument (NUL because
+// guest scripts can contain newlines) — and then behaves according to
+// FAKE_MSB_* variables:
 //
 //	FAKE_MSB_CONTEXT_BACKEND   backend reported by "msb context" (default local)
 //	FAKE_MSB_IMAGE_MISSING     comma-separated images that "image inspect" fails for
@@ -43,8 +44,8 @@ n=0
 while [ -f "$dir/call.$n" ]; do n=$((n+1)); done
 tmp="$dir/tmp.$$"
 {
-  echo "MSB_BACKEND=$MSB_BACKEND"
-  for a in "$@"; do printf '%s\n' "$a"; done
+  printf 'MSB_BACKEND=%s\0' "$MSB_BACKEND"
+  for a in "$@"; do printf '%s\0' "$a"; done
 } > "$tmp"
 mv "$tmp" "$dir/call.$n"
 
@@ -337,14 +338,14 @@ func (l Log) Calls() []Call {
 		if err != nil {
 			continue
 		}
-		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-		if len(lines) == 0 || !strings.HasPrefix(lines[0], "MSB_BACKEND=") {
+		fields := strings.Split(strings.TrimRight(string(data), "\x00"), "\x00")
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], "MSB_BACKEND=") {
 			continue
 		}
 		calls = append(calls, Call{
 			Index:   n,
-			Backend: strings.TrimPrefix(lines[0], "MSB_BACKEND="),
-			Args:    lines[1:],
+			Backend: strings.TrimPrefix(fields[0], "MSB_BACKEND="),
+			Args:    fields[1:],
 		})
 	}
 	sort.Slice(calls, func(i, j int) bool { return calls[i].Index < calls[j].Index })

@@ -18,7 +18,10 @@ import (
 // runDisposable implements `sbx run [-- <argv...>]`. A disposable run is one
 // `msb run` subprocess: sbx passes no --name, so msb owns the sandbox's
 // naming and its whole lifecycle, and sbx adds no cleanup step. It publishes
-// no ports and keeps no state to repair.
+// no ports and keeps no state to repair. A declared Bootstrap wraps the
+// guest command so it runs first; its failure ends the run, and msb removes
+// the one-shot sandbox — Sandbox volumes included — as it does for any
+// completed run.
 //
 // Interruptions cancel ctx, which box.Run forwards to the msb subprocess.
 // Whether the signal then reaches the guest itself is UNVERIFIED on a real
@@ -96,6 +99,9 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	guestArgv := argv
 	if len(guestArgv) == 0 {
 		guestArgv = []string{cfg.Shell}
+	}
+	if cfg.BootstrapDeclared() {
+		guestArgv = bootstrapArgv(cfg.Shell, cfg.Bootstrap.Run, guestArgv)
 	}
 	code, err := box.Run(ctx, msb.RunOptions{
 		CreateOptions: tr.Options,

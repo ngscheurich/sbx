@@ -30,7 +30,8 @@ Usage:
 Commands:
   plan    Show what sbx would create for this worktree's persistent sandbox, changing nothing
   run     Run a one-off guest command in a disposable sandbox, removed afterward
-  up      Create or start this worktree's persistent sandbox, refusing drift unless --allow-stale
+  up      Create or start this worktree's persistent sandbox, bootstrapping new ones
+          (--allow-stale ignores drift; --retry-bootstrap retries an incomplete bootstrap)
   exec    Run a guest command in the persistent sandbox (created or started first), leaving it running
   status  Show the persistent sandbox's identity, state, and drift, changing nothing
   logs    Show the persistent sandbox's msb logs

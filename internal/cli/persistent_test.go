@@ -477,16 +477,22 @@ egress = "public"
 	}
 }
 
-// TestUpRejectsRetryBootstrap checks that the Bootstrap flag is refused by
-// name rather than silently ignored.
-func TestUpRejectsRetryBootstrap(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
+// TestUpRetryBootstrapRequiresADeclaration checks that --retry-bootstrap
+// without a [bootstrap] table is an explicit error, before any backend
+// call: silently treating it as a plain up would hide an unrun step.
+func TestUpRetryBootstrapRequiresADeclaration(t *testing.T) {
+	worktree, fake := persistentFixture(t, persistentTOML)
 	code, _, stderr := sbxUp(t, worktree, "--retry-bootstrap")
-	if code != exitUsage {
-		t.Errorf("exit code = %d, want a usage error", code)
+	if code != exitFailure {
+		t.Errorf("exit code = %d, want a failure", code)
 	}
-	if !strings.Contains(stderr, "--retry-bootstrap") {
-		t.Errorf("stderr does not name the flag:\n%s", stderr)
+	for _, want := range []string{"--retry-bootstrap", "[bootstrap]"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr is missing %q:\n%s", want, stderr)
+		}
+	}
+	if got := fake.Calls(); len(got) != 0 {
+		t.Errorf("msb was called before the rejection: %v", got)
 	}
 }
 
