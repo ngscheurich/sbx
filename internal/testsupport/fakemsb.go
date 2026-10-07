@@ -415,6 +415,18 @@ start)
     echo "error: sandbox still running: cannot start sandbox '$2': already running" >&2
     exit 1
   fi
+  # The real msb re-resolves each secret from its own environment on every
+  # start (observed on msb 0.7.3): a missing host variable fails the start
+  # with "invalid config: secret <NAME>: host environment variable <VAR> is
+  # not set". When FAKE_MSB_START_REQUIRES_ENV names a variable, the fake
+  # fails the same way unless the caller's environment supplies it.
+  if [ -n "$FAKE_MSB_START_REQUIRES_ENV" ]; then
+    eval "fake_req_val=\${$FAKE_MSB_START_REQUIRES_ENV}"
+    if [ -z "$fake_req_val" ]; then
+      echo "error: invalid config: secret PROBE_TOKEN: host environment variable $FAKE_MSB_START_REQUIRES_ENV is not set" >&2
+      exit 1
+    fi
+  fi
   set_status "$2" running
   ;;
 stop)

@@ -566,12 +566,18 @@ func TestUpRetryBootstrapRequiresADeclaration(t *testing.T) {
 	}
 }
 
-// TestSecretBearingRestartRefused checks that creating a sandbox with a
-// secret works, while starting that same sandbox again after a stop is
-// refused: whether msb start re-reads the secret is unverified.
-func TestSecretBearingRestartRefused(t *testing.T) {
+// TestSecretBearingRestartSuppliesHostValues checks that creating a
+// sandbox with a secret works and that starting it again after a stop
+// succeeds with the secret's host value supplied again: msb re-resolves
+// each secret from its own environment on every start (observed on a real
+// host, ticket 01), and sbx's subprocess environment carries the host
+// value through. No sbx output or host state may contain the value.
+func TestSecretBearingRestartSuppliesHostValues(t *testing.T) {
 	worktree, fake := persistentFixture(t, secretTOML)
 	t.Setenv("SBX_TEST_TOKEN", "throwaway-test-value")
+	// The fake refuses a start whose environment lacks the variable, the
+	// way the real msb fails a restart whose secret value is missing.
+	t.Setenv("FAKE_MSB_START_REQUIRES_ENV", "SBX_TEST_TOKEN")
 	id := sandboxIdentityOf(t, worktree)
 
 	code, _, stderr := sbxUp(t, worktree)
@@ -599,24 +605,65 @@ func TestSecretBearingRestartRefused(t *testing.T) {
 		t.Fatalf("stop failed: %s", stderr)
 	}
 
-	code, _, stderr = sbxUp(t, worktree)
-	if code == 0 {
-		t.Fatal("up restarted a secret-bearing sandbox")
+	code, stdout, stderr := sbxUp(t, worktree)
+	if code != 0 {
+		t.Fatalf("up failed to restart the stopped secret-bearing sandbox: %s", stderr)
 	}
-	for _, want := range []string{"secret", "not yet verified"} {
-		if !strings.Contains(stderr, want) {
-			t.Errorf("stderr is missing %q:\n%s", want, stderr)
+	started := false
+	for _, c := range fake.Calls() {
+		if equal(c.Args, []string{"start", id}) {
+			started = true
 		}
 	}
-	// The refusal is a safety gate, not drift: --allow-stale does not bypass it.
-	if code, _, stderr := sbxUp(t, worktree, "--allow-stale"); code == 0 {
-		t.Fatal("--allow-stale bypassed the secret-bearing restart refusal")
-	} else if !strings.Contains(stderr, "secret") {
-		t.Errorf("stderr does not name the secret refusal:\n%s", stderr)
+	if !started {
+		t.Errorf("the restart never reached the backend as a start:\n%s", callDump(fake.Calls()))
+	}
+	if !strings.Contains(stdout, "started") {
+		t.Errorf("the restart report is missing from up's output:\n%s", stdout)
+	}
+
+	// Neither host state nor sbx's own reports may carry the value.
+	snap, err := os.ReadFile(snapshotPathOf(t, worktree))
+	if err != nil {
+		t.Fatalf("reading the creation snapshot: %v", err)
+	}
+	if strings.Contains(string(snap), "throwaway-test-value") {
+		t.Errorf("the creation snapshot contains the host secret value")
+	}
+	if strings.Contains(stdout+stderr, "throwaway-test-value") {
+		t.Errorf("up's output contains the host secret value")
+	}
+}
+
+// TestSecretBearingRestartFailsClosedOnMissingSecret checks that a stopped
+// secret-bearing sandbox is not started when its host variable is absent:
+// msb would fail the start, and sbx refuses before any resource changes
+// instead, naming the variable.
+func TestSecretBearingRestartFailsClosedOnMissingSecret(t *testing.T) {
+	worktree, fake := persistentFixture(t, secretTOML)
+	id := sandboxIdentityOf(t, worktree)
+	t.Setenv("SBX_TEST_TOKEN", "throwaway-test-value")
+
+	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+		t.Fatalf("creating a sandbox with a secret failed: %s", stderr)
+	}
+	if code, _, stderr := sbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
+		t.Fatalf("stop failed: %s", stderr)
+	}
+	if err := os.Unsetenv("SBX_TEST_TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := sbxUp(t, worktree)
+	if code == 0 {
+		t.Fatal("up started a secret-bearing sandbox with its host variable missing")
+	}
+	if !strings.Contains(stderr, "SBX_TEST_TOKEN") {
+		t.Errorf("stderr does not name the missing variable:\n%s", stderr)
 	}
 	for _, c := range fake.Calls() {
 		if equal(c.Args, []string{"start", id}) {
-			t.Errorf("a secret-bearing restart reached the backend: %q", c.Args)
+			t.Errorf("a restart without the secret's host value reached the backend: %q", c.Args)
 		}
 	}
 }

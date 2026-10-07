@@ -548,13 +548,11 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	if msb.IsRunning(entry.Status) {
 		action = "already running"
 	} else {
-		// Whether a stopped sandbox's msb start re-reads a --secret from its
-		// environment is UNVERIFIED (ticket 01's host check), so secret-bearing
-		// restarts are refused outright rather than risk a sandbox that runs
-		// with missing or stale secret wiring.
-		if len(p.cfg.Secrets) > 0 {
-			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox is stopped and its configuration declares secrets; whether `msb start` re-reads a secret from its environment is not yet verified on a real host, so sbx refuses secret-bearing restarts until a later release confirms the behavior")
-		}
+		// msb re-resolves each secret from its own environment on every
+		// start (verified on a real host, ticket 01), so a restart carries
+		// the declared host values again through the subprocess environment;
+		// preparePersistent has already refused any missing variable before
+		// any resource changed.
 		if err := box.Start(ctx, p.id.Sandbox); err != nil {
 			// The listing can lag behind the backend: a sandbox that is up may
 			// not read as "running" there (observed on a real host — msb ls

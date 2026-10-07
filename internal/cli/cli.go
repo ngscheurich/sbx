@@ -11,6 +11,7 @@ import (
 
 	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/gitx"
+	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/plan"
 	"github.com/ngscheurich/sbx/internal/state"
@@ -107,6 +108,7 @@ func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
 	checkPlanVolumes(ctx, msb.CLI{}, &p)
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
 	checkPlanPorts(&p)
+	checkPlanLive(ctx, msb.CLI{}, info, cfg, &p)
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
 }
@@ -167,6 +169,64 @@ func checkPlanPorts(p *plan.Plan) {
 		}
 		p.Ports = append(p.Ports, ps)
 	}
+}
+
+// checkPlanLive fills the plan's report of an existing sandbox under the
+// identity, when the backend holds one. It is read-only: listing,
+// inspection, drift comparison, and Bootstrap-marker reads change nothing,
+// and a drifted sandbox is reported without blocking the plan. The
+// reported picture is what status shows; planning adds the intent above it.
+func checkPlanLive(ctx context.Context, box msb.CLI, info gitx.Info, cfg config.Config, p *plan.Plan) {
+	if p.TranslateErr != nil {
+		// A configuration that does not translate leaves only the identity
+		// worth reporting; drift against it cannot be computed.
+		return
+	}
+	_, exists, err := findSandbox(ctx, box, p.Sandbox)
+	if err != nil {
+		p.Live = &plan.LiveReport{ListErr: err}
+		return
+	}
+	if !exists {
+		return
+	}
+	s, err := box.Inspect(ctx, p.Sandbox)
+	if err != nil {
+		p.Live = &plan.LiveReport{InspectErr: err}
+		return
+	}
+	live := &plan.LiveReport{Status: s.Status, Owned: isOwned(s)}
+	p.Live = live
+	if !live.Owned {
+		// Drift and Bootstrap are sbx's own records; an unowned sandbox has
+		// neither, and sbx never inspects or judges what it did not create.
+		return
+	}
+	ip := &persistent{info: info, cfg: cfg, id: identity.Identity{Sandbox: p.Sandbox}, tr: p.Translation}
+	drift, err := driftReport(ctx, box, ip)
+	if err != nil {
+		live.DriftErr = err
+	} else {
+		live.Drift = drift
+	}
+	boot, err := assessBootstrap(ip, s.CreatedAt)
+	switch boot {
+	case bootstrapComplete:
+		live.Bootstrap = "complete"
+	case bootstrapChanged:
+		live.Bootstrap = "changed"
+	case bootstrapIncomplete:
+		live.Bootstrap = "incomplete"
+	}
+	if err != nil {
+		live.BootstrapErr = err
+	}
+	ports, err := s.PortsOf()
+	if err != nil {
+		live.PortsErr = err
+		return
+	}
+	live.Ports = ports
 }
 
 // checkPlanVolumes runs the Project volume compatibility check for the

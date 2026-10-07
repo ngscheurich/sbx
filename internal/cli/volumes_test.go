@@ -384,8 +384,11 @@ func TestPlanReportsVolumeConflictsWithoutChangingAnything(t *testing.T) {
 		}
 	}
 	for _, c := range fake.Calls()[beforeCalls:] {
-		if c.Args[0] != "volumes" {
-			t.Errorf("plan called %q; only the read-only listing is allowed", c.Args)
+		switch c.Args[0] {
+		case "volumes", "ls", "inspect":
+			// The read-only inspections the plan is allowed.
+		default:
+			t.Errorf("plan called %q; only read-only inspections are allowed", c.Args)
 		}
 	}
 	if after := dirSnapshot(t, worktree); after != beforeWorktree {

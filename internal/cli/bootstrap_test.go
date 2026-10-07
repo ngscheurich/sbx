@@ -625,8 +625,14 @@ func TestPlanReportsDeclaredBootstrap(t *testing.T) {
 			t.Errorf("plan is missing %q:\n%s", want, stdout)
 		}
 	}
-	if got := fake.Calls(); len(got) != 0 {
-		t.Errorf("plan called msb: %v", got)
+	// The live-sandbox report lists the backend read-only; nothing that
+	// changes a sandbox or pulls an image is allowed.
+	for _, c := range fake.Calls() {
+		switch c.Args[0] {
+		case "ls":
+		default:
+			t.Errorf("plan called msb %q beyond the read-only listing: %v", c.Args, fake.Calls())
+		}
 	}
 	if _, err := os.Stat(filepath.Join(os.Getenv("XDG_STATE_HOME"), "sbx")); !os.IsNotExist(err) {
 		t.Error("plan wrote sbx state")

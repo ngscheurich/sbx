@@ -15,10 +15,9 @@ import (
 	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
-// Plan describes the intended persistent sandbox for one worktree. It is
-// deliberately partial in this release: Creation drift and image-check
-// status are added by later releases. The ports report is tentative by
-// nature — planning reads the registry read-only and never reserves.
+// Plan describes the intended persistent sandbox for one worktree. The
+// ports report is tentative by nature — planning reads the registry
+// read-only and never reserves.
 type Plan struct {
 	// Project is the sanitized project basename.
 	Project string
@@ -57,6 +56,48 @@ type Plan struct {
 	// PortRegistryErr records a failed registry read. Read-only planning
 	// reports it without reserving or correcting anything.
 	PortRegistryErr error
+	// Live is what plan observed about an existing sandbox under this
+	// identity, read without changing anything. Nil when the backend holds
+	// no sandbox under the identity.
+	Live *LiveReport
+}
+
+// LiveReport is an existing sandbox's state as the plan's read-only
+// inspection found it: the same picture status shows — backend state,
+// Creation drift, Bootstrap completion, and the observed published
+// endpoints — reported, never enforced or corrected.
+type LiveReport struct {
+	// ListErr records a failed backend listing, reported rather than read
+	// as an empty one.
+	ListErr error
+	// Status is the backend's status word for the existing sandbox. Empty
+	// when the inspection failed; InspectErr carries the reason, and an
+	// unreadable sandbox is never read as an unowned one.
+	Status string
+	// InspectErr records a failed sandbox inspection, reported rather than
+	// guessed.
+	InspectErr error
+	// Owned reports whether the sandbox carries sbx's managed label.
+	Owned bool
+	// Drift is the Creation-drift report for the owned sandbox; empty when
+	// the creation snapshot matches the current configuration. Reported
+	// here without blocking anything: the plan stays usable on drift.
+	Drift []string
+	// DriftErr records a failed drift evaluation, reported rather than
+	// guessed.
+	DriftErr error
+	// Bootstrap is the completion state for this incarnation: "complete",
+	// "changed", or "incomplete". Empty when no [bootstrap] is declared.
+	Bootstrap string
+	// BootstrapErr records a failed Bootstrap-marker read, reported rather
+	// than guessed.
+	BootstrapErr error
+	// Ports are the published ports the backend reports, which are
+	// authoritative once the sandbox exists.
+	Ports []msb.PublishedPort
+	// PortsErr records unreadable published ports, reported rather than
+	// guessed.
+	PortsErr error
 }
 
 // ImageCheckReport is the declared image check's status for one plan. The
@@ -259,10 +300,64 @@ func (p Plan) Render() string {
 	fmt.Fprintf(&b, "\nmsb arguments at creation:\n")
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
-	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift and Bootstrap completion against a\n")
-	fmt.Fprintf(&b, "live sandbox (see `sbx status`) are added by later releases.\n")
-	fmt.Fprintf(&b, "sbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
+	p.renderLive(&b)
+
+	fmt.Fprintf(&b, "\nsbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
+}
+
+// renderLive writes the existing sandbox's report when the backend holds
+// one under this identity. Every line is observation: drift, Bootstrap
+// state, and port discrepancies are reported here exactly as status
+// reports them, never enforced or corrected, so the plan stays usable
+// when the sandbox has drifted.
+func (p Plan) renderLive(b *strings.Builder) {
+	if p.Live == nil {
+		return
+	}
+	fmt.Fprintf(b, "\nexisting sandbox:\n")
+	if p.Live.ListErr != nil {
+		fmt.Fprintf(b, "  state: unknown (the backend's listing failed: %v)\n", p.Live.ListErr)
+		return
+	}
+	if p.Live.InspectErr != nil {
+		fmt.Fprintf(b, "  state: unknown (the sandbox could not be inspected: %v)\n", p.Live.InspectErr)
+		return
+	}
+	if !p.Live.Owned {
+		fmt.Fprintf(b, "  state: %s, but sbx did not create it; sbx never adopts a sandbox it does not own\n", p.Live.Status)
+		return
+	}
+	fmt.Fprintf(b, "  state: %s\n", p.Live.Status)
+	switch {
+	case p.Live.DriftErr != nil:
+		fmt.Fprintf(b, "  creation drift: unknown (%v)\n", p.Live.DriftErr)
+	case len(p.Live.Drift) == 0:
+		fmt.Fprintf(b, "  creation drift: none\n")
+	default:
+		fmt.Fprintf(b, "  creation drift (up and exec refuse this; the plan does not):\n")
+		for _, d := range p.Live.Drift {
+			fmt.Fprintf(b, "    - %s\n", d)
+		}
+	}
+	switch p.Live.Bootstrap {
+	case "":
+	case "complete":
+		fmt.Fprintf(b, "  bootstrap: complete (recorded for this sandbox's creation)\n")
+	case "changed":
+		fmt.Fprintf(b, "  bootstrap: complete, but the definition has changed since it ran; that is not Creation drift and does not block use\n")
+	case "incomplete":
+		fmt.Fprintf(b, "  bootstrap: incomplete — it never completed for this sandbox; plain `sbx up` will not retry it (use `sbx up --retry-bootstrap`, or repair with `sbx exec`)\n")
+	}
+	if p.Live.BootstrapErr != nil {
+		fmt.Fprintf(b, "  bootstrap: unknown (%v)\n", p.Live.BootstrapErr)
+	}
+	if p.Live.PortsErr != nil {
+		fmt.Fprintf(b, "  observed ports: unreadable (%v)\n", p.Live.PortsErr)
+	}
+	for _, port := range p.Live.Ports {
+		fmt.Fprintf(b, "  observed port: 127.0.0.1:%d -> guest %d\n", port.HostPort, port.GuestPort)
+	}
 }
 
 // volumeStatus renders one declared Project volume's compatibility outcome

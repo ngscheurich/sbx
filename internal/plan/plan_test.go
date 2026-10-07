@@ -61,7 +61,7 @@ func TestRenderShowsIdentityAndConfiguration(t *testing.T) {
 		"2G",
 		"egress",
 		"/bin/sh",
-		"partial",
+		"sbx changed nothing",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("rendered plan is missing %q:\n%s", want, rendered)

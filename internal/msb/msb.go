@@ -360,10 +360,12 @@ func IsRunning(status string) bool {
 	return strings.EqualFold(status, "running")
 }
 
-// Stop runs `msb stop <name>`: the sandbox keeps its state, ready to start
-// again. Whether a stopped sandbox's msb start needs a --secret supplied
-// again is UNVERIFIED, so sbx refuses secret-bearing restarts until that is
-// confirmed.
+// Stop runs `msb stop <name>`: the sandbox keeps its state, ready to
+// start again. A stopped sandbox's msb start re-resolves each secret from
+// its own environment on every start (verified on msb 0.7.3), so the
+// caller must supply the declared host values in the subprocess
+// environment — localEnv does, and CheckSecretEnv refuses a missing one
+// before any resource changes.
 func (c CLI) Stop(ctx context.Context, name string) error {
 	if _, err := c.run(ctx, "stop", name); err != nil {
 		return fmt.Errorf("stopping sandbox %s: %w", name, err)
