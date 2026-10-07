@@ -9,7 +9,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -27,10 +26,10 @@ import (
 // runBuild implements `sbx build [--keep-archive]`. The archive is removed
 // on success, failure, and cancellation alike unless --keep-archive keeps
 // it for debugging.
-func runBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func runBuild(ctx context.Context, args []string, out *output) int {
 	keep, err := parsePersistentFlags("build", args, []string{"--keep-archive"})
 	if err != nil {
-		fmt.Fprintf(stderr, "sbx: %v\n", err)
+		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
 		return exitUsage
 	}
 
@@ -38,7 +37,7 @@ func runBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	defer stop()
 
 	fatal := func(err error) int {
-		fmt.Fprintf(stderr, "sbx: %v\n", err)
+		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
 		return exitFailure
 	}
 
@@ -97,7 +96,7 @@ func runBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		Target:     cfg.Build.Target,
 		Platform:   cfg.Build.Platform,
 		Tag:        cfg.Image,
-	}, stdout, stderr); err != nil {
+	}, out.rawOut, out.rawErr); err != nil {
 		return fatal(err)
 	}
 	if err := dk.Save(ctx, cfg.Image, archivePath); err != nil {
@@ -111,13 +110,13 @@ func runBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	// an isolated sandbox from the image alone, and a failing check fails
 	// the build — although the imported image stays cached (ADR-0004).
 	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
-	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, stdout, stderr); err != nil {
+	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, out); err != nil {
 		return fatal(err)
 	}
 
-	fmt.Fprintf(stdout, "built %s for %s and imported it into msb’s image store\n", cfg.Image, cfg.Build.Platform)
+	fmt.Fprintf(out.stdout, "built %s for %s and imported it into msb’s image store\n", cfg.Image, cfg.Build.Platform)
 	if keepArchive {
-		fmt.Fprintf(stdout, "image archive kept for debugging: %s\n", archivePath)
+		fmt.Fprintf(out.stdout, "image archive kept for debugging: %s\n", archivePath)
 	}
 	return exitOK
 }

@@ -164,21 +164,21 @@ func reportPorts(sandbox string, s msb.Sandbox, stdout io.Writer) {
 // sandboxes that no longer exist, keep those for existing ones — including
 // stopped ones — and fail safely when the backend cannot be inspected,
 // changing nothing.
-func runPortPrune(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func runPortPrune(ctx context.Context, args []string, out *output) int {
 	// args[0] is "port" and args[1] is "prune"; anything further is usage.
 	if len(args) > 2 {
-		fmt.Fprintf(stderr, "sbx: port prune takes no arguments or flags, got %q\n", strings.Join(args[2:], " "))
+		fmt.Fprintf(out.stderr, "sbx: port prune takes no arguments or flags, got %q\n", strings.Join(args[2:], " "))
 		return exitUsage
 	}
 	box := msb.CLI{}
 	if _, err := box.LocalContext(ctx); err != nil {
-		return persistentFatal(err, stderr)
+		return persistentFatal(err, out.stderr)
 	}
 	// The backend is inspected before anything is pruned: a failed listing
 	// is never read as "nothing exists".
 	entries, err := box.List(ctx)
 	if err != nil {
-		return persistentFatal(fmt.Errorf("inspecting the backend before pruning: %w", err), stderr)
+		return persistentFatal(fmt.Errorf("inspecting the backend before pruning: %w", err), out.stderr)
 	}
 	exists := map[string]bool{}
 	for _, e := range entries {
@@ -186,16 +186,16 @@ func runPortPrune(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	removed, err := ports.Prune(func(sandbox string) bool { return exists[sandbox] })
 	if err != nil {
-		return persistentFatal(err, stderr)
+		return persistentFatal(err, out.stderr)
 	}
 	if len(removed) == 0 {
-		fmt.Fprintf(stdout, "port registry: nothing to prune; every reservation belongs to a sandbox the backend still knows (stopped sandboxes keep theirs)\n")
+		fmt.Fprintf(out.stdout, "port registry: nothing to prune; every reservation belongs to a sandbox the backend still knows (stopped sandboxes keep theirs)\n")
 		return exitOK
 	}
-	fmt.Fprintf(stdout, "port registry: removed %d reservation(s) for sandbox(es) that no longer exist:\n", len(removed))
+	fmt.Fprintf(out.stdout, "port registry: removed %d reservation(s) for sandbox(es) that no longer exist:\n", len(removed))
 	for _, r := range removed {
-		fmt.Fprintf(stdout, "  - %s %s: released host port %d (guest %d)\n", r.Sandbox, r.Name, r.Port, r.Guest)
+		fmt.Fprintf(out.stdout, "  - %s %s: released host port %d (guest %d)\n", r.Sandbox, r.Name, r.Port, r.Guest)
 	}
-	fmt.Fprintf(stdout, "reservations for existing sandboxes, stopped ones included, were kept.\n")
+	fmt.Fprintf(out.stdout, "reservations for existing sandboxes, stopped ones included, were kept.\n")
 	return exitOK
 }

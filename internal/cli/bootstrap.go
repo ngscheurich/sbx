@@ -86,10 +86,10 @@ var saveBootstrapMarker = state.SaveBootstrapMarker
 // failure — the guest code, an interruption, or the marker write itself —
 // leaves the sandbox incomplete: sbx does not retry it implicitly, because
 // partial initialization may already have run.
-func runBootstrap(ctx context.Context, box msb.CLI, p *persistent, createdAt string, stdout, stderr io.Writer) error {
-	fmt.Fprintf(stderr, "sbx: running bootstrap in %s (%s -c)\n", p.id.Sandbox, p.cfg.Shell)
+func runBootstrap(ctx context.Context, box msb.CLI, p *persistent, createdAt string, out *output) error {
+	fmt.Fprintf(out.stderr, "sbx: running bootstrap in %s (%s -c)\n", p.id.Sandbox, p.cfg.Shell)
 	code, err := box.Exec(ctx, p.id.Sandbox, p.tr.Workspace,
-		[]string{p.cfg.Shell, "-c", p.cfg.Bootstrap.Run}, nil, stdout, stderr)
+		[]string{p.cfg.Shell, "-c", p.cfg.Bootstrap.Run}, nil, out.rawOut, out.rawErr)
 	if err != nil && code < 0 {
 		return fmt.Errorf("bootstrap was interrupted before it finished: %w\n\n%s", err, incompleteGuidance(p.id.Sandbox))
 	}
@@ -104,7 +104,7 @@ func runBootstrap(ctx context.Context, box msb.CLI, p *persistent, createdAt str
 	if err := saveBootstrapMarker(p.id.Sandbox, marker); err != nil {
 		return fmt.Errorf("bootstrap succeeded, but recording its completion failed: %v\n\n%s", err, incompleteGuidance(p.id.Sandbox))
 	}
-	fmt.Fprintf(stderr, "sbx: bootstrap complete for %s\n", p.id.Sandbox)
+	fmt.Fprintf(out.stderr, "sbx: bootstrap complete for %s\n", p.id.Sandbox)
 	return nil
 }
 

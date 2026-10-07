@@ -26,7 +26,7 @@ import (
 // Whether the signal then reaches the guest itself is UNVERIFIED on a real
 // host; this interim implementation must not be treated as verified signal
 // forwarding.
-func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runDisposable(ctx context.Context, args []string, stdin io.Reader, out *output) int {
 	var argv []string
 	switch {
 	case len(args) == 1:
@@ -34,7 +34,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	case args[1] == "--":
 		argv = args[2:]
 	default:
-		fmt.Fprintf(stderr, "sbx: run takes an optional %q separator before the guest command, got %q\n", "--", strings.Join(args[1:], " "))
+		fmt.Fprintf(out.stderr, "sbx: run takes an optional %q separator before the guest command, got %q\n", "--", strings.Join(args[1:], " "))
 		return exitUsage
 	}
 
@@ -43,7 +43,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 
 	box := msb.CLI{}
 	fatal := func(err error) int {
-		fmt.Fprintf(stderr, "sbx: %v\n", err)
+		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
 		return exitFailure
 	}
 
@@ -88,7 +88,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	// unchanged before the run uses it (ADR-0004). The gate is a no-op when
 	// no image check is declared.
 	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
-	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, stdout, stderr); err != nil {
+	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, out); err != nil {
 		return fatal(err)
 	}
 
@@ -125,7 +125,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		CreateOptions: tr.Options,
 		Workdir:       tr.Workspace,
 		Argv:          guestArgv,
-	}, stdin, stdout, stderr)
+	}, stdin, out.rawOut, out.rawErr)
 
 	// The sandbox's whole lifecycle — creation, the command, and whatever
 	// happens to the sandbox afterwards — is msb run's own behavior; sbx

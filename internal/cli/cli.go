@@ -15,6 +15,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/plan"
 	"github.com/ngscheurich/sbx/internal/state"
+	"github.com/ngscheurich/sbx/internal/ui"
 	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
@@ -25,6 +26,33 @@ const (
 	exitFailure = 1
 	exitUsage   = 2
 )
+
+// output carries the writers one command writes through. sbx's own lines
+// go to the styled writers — colorprofile-wrapped once here, so a pipe or
+// NO_COLOR receives Plain output (CONTEXT.md) no matter what a renderer
+// emits — while subprocess stdio passes through the raw writers
+// untouched, the way guest commands' output always has. styles is the
+// palette every sbx-authored surface renders with.
+type output struct {
+	stdout io.Writer // sbx-authored stdout lines
+	stderr io.Writer // sbx-authored stderr lines
+	rawOut io.Writer // raw stdout for subprocess stdio pass-through
+	rawErr io.Writer // raw stderr for subprocess stdio pass-through
+	styles ui.Styles
+}
+
+// newOutput wraps the writers Run received: the one place sbx's output
+// seam is applied.
+func newOutput(stdout, stderr io.Writer) *output {
+	styledOut, styledErr, styles := ui.Writers(stdout, stderr)
+	return &output{
+		stdout: styledOut,
+		stderr: styledErr,
+		rawOut: stdout,
+		rawErr: stderr,
+		styles: styles,
+	}
+}
 
 const helpText = `sbx — worktree-scoped local development sandboxes
 
@@ -59,60 +87,61 @@ Subcommands:
 // context carries cancellation (sbx forwards it to the running guest) and
 // stdin is passed through to guest commands.
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	out := newOutput(stdout, stderr)
 	if len(args) == 0 {
-		fmt.Fprint(stdout, helpText)
+		fmt.Fprint(out.stdout, helpText)
 		return exitOK
 	}
 	cmd := args[0]
 	switch cmd {
 	case "-h", "--help", "help":
-		fmt.Fprint(stdout, helpText)
+		fmt.Fprint(out.stdout, helpText)
 		return exitOK
 	case "plan":
 		if len(args) > 1 {
-			fmt.Fprintf(stderr, "sbx: plan takes no arguments or flags yet, got %q\n", strings.Join(args[1:], " "))
+			fmt.Fprintf(out.stderr, "sbx: plan takes no arguments or flags yet, got %q\n", strings.Join(args[1:], " "))
 			return exitUsage
 		}
-		return runPlan(ctx, stdout, stderr)
+		return runPlan(ctx, out)
 	case "build":
-		return runBuild(ctx, args, stdout, stderr)
+		return runBuild(ctx, args, out)
 	case "run":
-		return runDisposable(ctx, args, stdin, stdout, stderr)
+		return runDisposable(ctx, args, stdin, out)
 	case "up":
-		return runUp(ctx, args, stdout, stderr)
+		return runUp(ctx, args, out)
 	case "exec":
-		return runExec(ctx, args, stdin, stdout, stderr)
+		return runExec(ctx, args, stdin, out)
 	case "status":
-		return runStatus(ctx, args, stdout, stderr)
+		return runStatus(ctx, args, out)
 	case "logs":
-		return runLogs(ctx, args, stdout, stderr)
+		return runLogs(ctx, args, out)
 	case "stop":
-		return runStop(ctx, args, stdout, stderr)
+		return runStop(ctx, args, out)
 	case "rm":
-		return runRm(ctx, args, stdin, stdout, stderr)
+		return runRm(ctx, args, stdin, out)
 	case "port":
 		if len(args) < 2 {
-			fmt.Fprint(stdout, portHelpText)
+			fmt.Fprint(out.stdout, portHelpText)
 			return exitOK
 		}
 		if args[1] != "prune" {
-			fmt.Fprintf(stderr, "sbx: unknown port command %q; run “sbx port” for usage\n", args[1])
+			fmt.Fprintf(out.stderr, "sbx: unknown port command %q; run “sbx port” for usage\n", args[1])
 			return exitUsage
 		}
-		return runPortPrune(ctx, args, stdout, stderr)
+		return runPortPrune(ctx, args, out)
 	case "-V", "--version", "version":
-		fmt.Fprintln(stdout, "sbx (development build)")
+		fmt.Fprintln(out.stdout, "sbx (development build)")
 		return exitOK
 	default:
-		fmt.Fprintf(stderr, "sbx: unknown command %q\n\n%s", cmd, helpText)
+		fmt.Fprintf(out.stderr, "sbx: unknown command %q\n\n%s", cmd, helpText)
 		return exitUsage
 	}
 }
 
-func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
+func runPlan(ctx context.Context, out *output) int {
 	info, cfg, err := discoverConfig(ctx)
 	if err != nil {
-		fmt.Fprintf(stderr, "sbx: %v\n", err)
+		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
 		return exitFailure
 	}
 	p := plan.Compose(info, cfg)
@@ -120,7 +149,7 @@ func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
 	checkPlanPorts(&p)
 	checkPlanLive(ctx, msb.CLI{}, info, cfg, &p)
-	fmt.Fprint(stdout, p.Render())
+	fmt.Fprint(out.stdout, p.Render())
 	return exitOK
 }
 

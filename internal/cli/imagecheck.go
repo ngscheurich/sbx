@@ -13,7 +13,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -63,7 +62,7 @@ func recordedPass(digest, script string) (bool, error) {
 // records the pass in host state: a tag repointed mid-check records
 // nothing, because the pass would attest contents the script never ran
 // against.
-func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktreeRoot, baseName, script, digest string, stdout, stderr io.Writer) error {
+func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktreeRoot, baseName, script, digest string, out *output) error {
 	suffix, err := randomHex(6)
 	if err != nil {
 		return fmt.Errorf("naming the image-check sandbox: %w", err)
@@ -87,7 +86,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 	removeCtx := context.WithoutCancel(ctx)
 	defer func() {
 		if err := box.Remove(removeCtx, name); err != nil {
-			fmt.Fprintf(stderr, "warning: removing the image-check sandbox %s failed: %v\n", name, err)
+			fmt.Fprintf(out.stderr, "warning: removing the image-check sandbox %s failed: %v\n", name, err)
 		}
 	}()
 
@@ -96,7 +95,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 	// secrets, or project network policy.
 	argv := []string{"/bin/sh", "-c",
 		"cat > " + imageCheckGuestPath + " && chmod +x " + imageCheckGuestPath + " && exec " + imageCheckGuestPath}
-	code, err := box.Exec(ctx, name, "", argv, strings.NewReader(script), stdout, stderr)
+	code, err := box.Exec(ctx, name, "", argv, strings.NewReader(script), out.rawOut, out.rawErr)
 	if err != nil && code < 0 {
 		return fmt.Errorf("the image check was interrupted before it finished: %w", err)
 	}
@@ -114,7 +113,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 	if err := state.SaveImageCheckSuccess(digest, state.ImageCheckScriptHash(script)); err != nil {
 		return fmt.Errorf("the image check passed, but recording its success failed: %w", err)
 	}
-	fmt.Fprintf(stderr, "sbx: image check passed for %s (image contents %s)\n", cfg.Image, digest)
+	fmt.Fprintf(out.stderr, "sbx: image check passed for %s (image contents %s)\n", cfg.Image, digest)
 	return nil
 }
 
@@ -124,7 +123,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 // Before returning, it confirms the image still resolves to the contents
 // the check covered, so a sandbox is never created from contents that
 // changed underneath a just-finished check.
-func ensureImageChecked(ctx context.Context, box msb.CLI, cfg config.Config, worktreeRoot, baseName string, stdout, stderr io.Writer) error {
+func ensureImageChecked(ctx context.Context, box msb.CLI, cfg config.Config, worktreeRoot, baseName string, out *output) error {
 	if cfg.ImageCheck == "" {
 		return nil
 	}
@@ -142,7 +141,7 @@ func ensureImageChecked(ctx context.Context, box msb.CLI, cfg config.Config, wor
 		return err
 	}
 	if !ok {
-		if err := runCheckSandbox(ctx, box, cfg, worktreeRoot, baseName, script, digest, stdout, stderr); err != nil {
+		if err := runCheckSandbox(ctx, box, cfg, worktreeRoot, baseName, script, digest, out); err != nil {
 			return err
 		}
 	}
@@ -162,7 +161,7 @@ func ensureImageChecked(ctx context.Context, box msb.CLI, cfg config.Config, wor
 // contents; the image reference must still resolve to them for a check to
 // run, so a tag repointed away from the sandbox's contents fails closed
 // rather than guess. A failed check never touches the sandbox or its data.
-func ensureSandboxImageChecked(ctx context.Context, box msb.CLI, p *persistent, sandboxDigest string, stdout, stderr io.Writer) error {
+func ensureSandboxImageChecked(ctx context.Context, box msb.CLI, p *persistent, sandboxDigest string, out *output) error {
 	if p.cfg.ImageCheck == "" {
 		return nil
 	}
@@ -187,7 +186,7 @@ func ensureSandboxImageChecked(ctx context.Context, box msb.CLI, p *persistent, 
 	if info.ManifestDigest != sandboxDigest {
 		return fmt.Errorf("the persistent sandbox %s was created from image contents %s, which have no recorded image-check pass for the current script, and %s now resolves to %s; sbx cannot run the check against the sandbox’s contents, so it refuses to use the sandbox", p.id.Sandbox, sandboxDigest, p.cfg.Image, info.ManifestDigest)
 	}
-	return runCheckSandbox(ctx, box, p.cfg, p.info.WorktreeRoot, p.id.Sandbox, script, sandboxDigest, stdout, stderr)
+	return runCheckSandbox(ctx, box, p.cfg, p.info.WorktreeRoot, p.id.Sandbox, script, sandboxDigest, out)
 }
 
 // randomHex returns n hex characters of cryptographic randomness, for
