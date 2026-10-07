@@ -67,7 +67,14 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	if _, err := box.LocalContext(ctx); err != nil {
 		return fatal(err)
 	}
-	if err := box.PullIfMissing(ctx, cfg.Image); err != nil {
+	// A project with a [build] recipe builds its image explicitly with
+	// `sbx build`; nothing else builds images, so a missing one is an
+	// instruction, not a pull. Only a prebuilt image may be pulled.
+	if cfg.Build != nil {
+		if _, err := box.ImageInspect(ctx, cfg.Image); err != nil {
+			return fatal(errImageNeedsBuild(cfg.Image))
+		}
+	} else if err := box.PullIfMissing(ctx, cfg.Image); err != nil {
 		return fatal(err)
 	}
 

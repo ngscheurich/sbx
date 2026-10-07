@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -365,6 +366,42 @@ func TestPullFailureHintsAtImport(t *testing.T) {
 	calls := fake.Calls()
 	if len(calls) != 2 {
 		t.Fatalf("fake msb saw %d calls, want 2:\n%s", len(calls), dumpCalls(calls))
+	}
+}
+
+// TestLoadExactArgv pins `msb load --input <archive>`, the import half of
+// `sbx build`.
+func TestLoadExactArgv(t *testing.T) {
+	fake := testsupport.FakeMSB(t)
+	box := CLI{}
+	archive := filepath.Join(t.TempDir(), "image.tar")
+	if err := os.WriteFile(archive, []byte("fake archive\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := box.Load(context.Background(), archive); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"load", "--input", archive}
+	if got := fake.Calls()[0].Args; !equal(got, want) {
+		t.Errorf("load argv mismatch:\n got: %q\nwant: %q", got, want)
+	}
+	if got := fake.Loaded(t, 0); got != archive {
+		t.Errorf("fake recorded archive %q, want %q", got, archive)
+	}
+}
+
+// TestLoadFailureSurfacesMessage checks that a failed import carries msb's
+// own message.
+func TestLoadFailureSurfacesMessage(t *testing.T) {
+	testsupport.FakeMSB(t)
+	t.Setenv("FAKE_MSB_LOAD_FAIL", "1")
+	box := CLI{}
+	err := box.Load(context.Background(), filepath.Join(t.TempDir(), "image.tar"))
+	if err == nil {
+		t.Fatal("load succeeded for a failing msb")
+	}
+	if !strings.Contains(err.Error(), "load failed") {
+		t.Errorf("error lacks msb's message: %v", err)
 	}
 }
 

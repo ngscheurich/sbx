@@ -182,17 +182,29 @@ func SecretConfYAML(secrets map[string]config.SecretConfig, names []string) stri
 	return b.String()
 }
 
-// resolveBindSource resolves a bind source to an absolute host path.
-// sbx has no interpolation language: a leading "~" expands against the
-// caller's home directory ("~" exactly or "~/..." only), absolute paths
-// pass as-is, and anything else resolves against the worktree root. Any
-// "$" in the source is a rejected host-environment reference, and "~user"
-// forms are rejected rather than misread as home-relative. A missing source
-// is an error. It also reports whether the source is a regular file, which
-// selects msb's --mount-file over --mount-dir.
+// resolveBindSource resolves a bind source to an absolute host path and
+// reports whether the source is a regular file, which selects msb's
+// --mount-file over --mount-dir.
 func resolveBindSource(worktreeRoot, source string) (string, bool, error) {
+	resolved, isDir, err := ResolveHostPath(worktreeRoot, source, "bind source")
+	if err != nil {
+		return "", false, err
+	}
+	return resolved, !isDir, nil
+}
+
+// ResolveHostPath resolves a declared host path to an absolute path that
+// must exist. sbx has no interpolation language: a leading "~" expands
+// against the caller's home directory ("~" exactly or "~/..." only),
+// absolute paths pass as-is, and anything else resolves against the
+// worktree root. Any "$" in the source is a rejected host-environment
+// reference, and "~user" forms are rejected rather than misread as
+// home-relative. `what` names the setting in error messages ("bind
+// source", "build context"). It also reports whether the path is a
+// directory.
+func ResolveHostPath(worktreeRoot, source, what string) (string, bool, error) {
 	if strings.Contains(source, "$") {
-		return "", false, fmt.Errorf("bind source %q contains %q: sbx has no interpolation language; use an absolute, worktree-relative, or ~-prefixed path", source, "$")
+		return "", false, fmt.Errorf("%s %q contains %q: sbx has no interpolation language; use an absolute, worktree-relative, or ~-prefixed path", what, source, "$")
 	}
 	var resolved string
 	switch {
@@ -203,7 +215,7 @@ func resolveBindSource(worktreeRoot, source string) (string, bool, error) {
 		}
 		resolved = filepath.Join(home, strings.TrimPrefix(source, "~"))
 	case strings.HasPrefix(source, "~"):
-		return "", false, fmt.Errorf("bind source %q: ~user expansion is not supported; use an absolute path instead", source)
+		return "", false, fmt.Errorf("%s %q: ~user expansion is not supported; use an absolute path instead", what, source)
 	case filepath.IsAbs(source):
 		resolved = source
 	default:
@@ -211,9 +223,9 @@ func resolveBindSource(worktreeRoot, source string) (string, bool, error) {
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return "", false, fmt.Errorf("bind source %q does not exist (resolved to %s)", source, resolved)
+		return "", false, fmt.Errorf("%s %q does not exist (resolved to %s)", what, source, resolved)
 	}
-	return resolved, !info.IsDir(), nil
+	return resolved, info.IsDir(), nil
 }
 
 func sortedVolumeNames(cfg config.Config) []string {

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -337,7 +338,6 @@ egress = "public"
 func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	tests := map[string]string{
 		"ports":       "[ports.web]\nguest = 4000",
-		"build":       "[build]\ncontext = \".\"",
 		"bootstrap":   "[bootstrap]\nrun = \"echo hi\"",
 		"image_check": "image_check = \"check.sh\"",
 	}
@@ -354,6 +354,114 @@ func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 				t.Errorf("error = %q, want it to name %q", err.Error(), name)
 			}
 		})
+	}
+}
+
+func TestLoadBuild(t *testing.T) {
+	cfg, err := Load(write(t, minimal+`
+[build]
+context = "./docker"
+dockerfile = "Containerfile"
+target = "runtime"
+platform = "linux/amd64"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Build == nil {
+		t.Fatal("Build is nil, want the declared recipe")
+	}
+	if cfg.Build.Context != "./docker" {
+		t.Errorf("Build.Context = %q", cfg.Build.Context)
+	}
+	if cfg.Build.Dockerfile != "Containerfile" {
+		t.Errorf("Build.Dockerfile = %q", cfg.Build.Dockerfile)
+	}
+	if cfg.Build.Target != "runtime" {
+		t.Errorf("Build.Target = %q", cfg.Build.Target)
+	}
+	if cfg.Build.Platform != "linux/amd64" {
+		t.Errorf("Build.Platform = %q", cfg.Build.Platform)
+	}
+}
+
+func TestLoadBuildDefaults(t *testing.T) {
+	cfg, err := Load(write(t, minimal+`
+[build]
+context = "."
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Build == nil {
+		t.Fatal("Build is nil, want the declared recipe")
+	}
+	if want := "linux/" + runtime.GOARCH; cfg.Build.Platform != want {
+		t.Errorf("Build.Platform = %q, want the host default %q", cfg.Build.Platform, want)
+	}
+	if cfg.Build.Dockerfile != "" || cfg.Build.Target != "" {
+		t.Errorf("Build = %+v, want no dockerfile or target", cfg.Build)
+	}
+}
+
+func TestLoadNoBuildLeavesImagePrebuilt(t *testing.T) {
+	cfg, err := Load(write(t, minimal))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Build != nil {
+		t.Errorf("Build = %+v, want nil: without [build] the image is prebuilt", cfg.Build)
+	}
+}
+
+func TestLoadBuildRequiresContext(t *testing.T) {
+	_, err := Load(write(t, minimal+`
+[build]
+dockerfile = "Dockerfile"
+`))
+	if err == nil {
+		t.Fatal("Load succeeded with a [build] table without a context")
+	}
+	if !strings.Contains(err.Error(), "build") || !strings.Contains(err.Error(), "context") {
+		t.Errorf("error = %q, want it to name build and context", err.Error())
+	}
+}
+
+func TestLoadBuildRejectsUnknownKeys(t *testing.T) {
+	_, err := Load(write(t, minimal+`
+[build]
+context = "."
+args = ["--debug"]
+`))
+	if err == nil {
+		t.Fatal("Load succeeded with an unknown [build] key")
+	}
+	if !strings.Contains(err.Error(), "build.args") {
+		t.Errorf("error = %q, want it to name build.args", err.Error())
+	}
+}
+
+func TestLoadBuildValidatesPlatform(t *testing.T) {
+	for _, platform := range []string{"linux", "linux/", "/amd64", "linux/amd64/extra/deep", "Linux/AMD64"} {
+		_, err := Load(write(t, minimal+`
+[build]
+context = "."
+platform = "`+platform+`"
+`))
+		if err == nil {
+			t.Errorf("Load succeeded with platform %q", platform)
+		} else if !strings.Contains(err.Error(), "platform") {
+			t.Errorf("error = %q, want it to mention platform", err.Error())
+		}
+	}
+	for _, platform := range []string{"linux/arm64", "linux/arm/v7"} {
+		if _, err := Load(write(t, minimal+`
+[build]
+context = "."
+platform = "`+platform+`"
+`)); err != nil {
+			t.Errorf("Load rejected platform %q: %v", platform, err)
+		}
 	}
 }
 
