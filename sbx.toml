@@ -30,5 +30,23 @@ type = "bind"
 source = "~/.pi/agent/sessions"
 target = "/root/.pi/agent/sessions"
 
+[[mounts]]
+type = "bind"
+source = "~/.pi/agent/skills"
+target = "/root/.pi/skills"
+read_only = true
+
+[[mounts]]
+type = "bind"
+source = "~/.pi/agent/extensions"
+target = "/root/.pi/extensions"
+read_only = true
+
+[[mounts]]
+type = "bind"
+source = "~/.pi/agent/trust.json"
+target = "/root/.pi/agent/trust.json"
+read_only = true
+
 [network]
 egress = "public"
