@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/gitx"
+	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
@@ -89,21 +91,29 @@ func fixtureRepoFrom(t *testing.T, fixture string) string {
 // package.
 const fixtureRestrictedDir = "../../fixtures/restricted-cli"
 
-// TestFixtureRestrictedFailsClosedVerbatim copies the complete fixture and
-// checks that `sbx run` refuses it before any backend call: its Project
-// volumes have no compatibility checks yet, so the preflight fails closed.
-// Fail-closed is the contract; which gate fires first may change as those
-// features land.
-func TestFixtureRestrictedFailsClosedVerbatim(t *testing.T) {
+// TestFixtureRestrictedFailsClosedPorts copies the complete fixture and
+// checks that `sbx run` refuses it before any backend call once it declares
+// a not-yet-supported field: [ports] is rejected by strict configuration
+// parsing, before any backend call. Fail-closed is the contract; which
+// gate fires first may change as the remaining features land.
+func TestFixtureRestrictedFailsClosedPorts(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
+	// The verbatim fixture is fully supported now; the variant adds [ports],
+	// which no build of sbx translates yet, derived from the fixture file so
+	// the two cannot drift.
+	variant := testsupport.FixtureTOML(t,
+		filepath.Join(fixtureRestrictedDir, "sbx.toml"), "[ports]")
+	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, worktree, func() int {
 		return Run(context.Background(), []string{"run", "--", "go", "version"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
-		t.Fatal("run succeeded on the verbatim fixture, which declares untranslated settings")
+		t.Fatal("run succeeded on the fixture variant, which declares a not-yet-supported field")
 	}
 	if got := fake.Calls(); len(got) != 0 {
 		t.Errorf("msb was called before rejection: %v", got)
@@ -111,9 +121,9 @@ func TestFixtureRestrictedFailsClosedVerbatim(t *testing.T) {
 }
 
 // TestFixtureRestrictedBuildVerbatim copies the complete fixture and checks
-// that `sbx build` builds and imports its image: the build needs neither
-// the Project volumes' pending compatibility checks nor the secret's host
-// variable, so the verbatim fixture builds as-is.
+// that `sbx build` builds and imports its image: the build runs no Project
+// volume compatibility check (it mutates no sandbox) and needs no secret's
+// host variable, so the verbatim fixture builds as-is.
 func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
 	msbLog := testsupport.FakeMSB(t)
 	dockerLog := testsupport.FakeDocker(t)
@@ -157,6 +167,7 @@ func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
 // fixture: both binds, both Project volumes with their namespaced names,
 // the allowlist with DNS, and the redacted secret map.
 func TestFixtureRestrictedPlanTranslation(t *testing.T) {
+	testsupport.FakeMSB(t)
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
 
 	var stdout, stderr bytes.Buffer
@@ -171,8 +182,8 @@ func TestFixtureRestrictedPlanTranslation(t *testing.T) {
 		filepath.Join(worktree, "host-notes.txt") + " -> /mnt/host-notes.txt (read-only)",
 		filepath.Join(worktree, "host-state") + " -> /mnt/host-state",
 		"--mount-named",
-		"-go_build:/root/.cache/go-build",
-		"-go_mod:/go/pkg/mod",
+		"go_build at /root/.cache/go-build (will be created)",
+		"go_mod at /go/pkg/mod (will be created)",
 		"allow@proxy.golang.org",
 		"allow@sum.golang.org",
 		"allow@example.com",
@@ -187,20 +198,17 @@ func TestFixtureRestrictedPlanTranslation(t *testing.T) {
 }
 
 // TestFixtureRestrictedRunTranslation checks the full disposable-run argv
-// for the fixture's executable configuration: resources, both binds, the
-// allowlist with DNS and TLS interception, and the secret map — with the
-// guest shell used when no command is given.
+// for the fixture's executable configuration: resources, both binds, both
+// Project volumes, the allowlist with DNS and TLS interception, and the
+// secret map — with the guest shell used when no command is given.
 func TestFixtureRestrictedRunTranslation(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// The executable variant is the fixture minus the Project volumes,
-	// whose compatibility checks do not exist yet; derived from the fixture
-	// file so the two cannot drift. [build] stays: `sbx run` inspects the
-	// image and runs without building anything.
+	// Both features have landed, so the full verbatim fixture runs as-is;
+	// derived from the fixture file so the two cannot drift.
 	variant := testsupport.FixtureTOML(t,
-		filepath.Join(fixtureRestrictedDir, "sbx.toml"),
-		"[volumes.go_mod]", "[volumes.go_build]")
+		filepath.Join(fixtureRestrictedDir, "sbx.toml"))
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -213,16 +221,24 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 		t.Fatalf("run failed: %s", stderr.String())
 	}
 	calls := fake.Calls()
-	if len(calls) != 3 {
+	if len(calls) != 4 {
 		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	runCall := calls[2].Args
+	// The Project volume compatibility check runs between the context
+	// confirmation and the image inspection, before any mutation.
+	if got := calls[1].Args; !equal(got, []string{"volumes", "--format", "json"}) {
+		t.Errorf("second call mismatch: %q", got)
+	}
+	ns := fixtureVolumeNamespace(t, worktree)
+	runCall := calls[3].Args
 	want := []string{"run", "sbx-restricted-cli:latest",
 		"--cpus", "2",
 		"--memory", "2G",
 		"--mount-dir", worktree + ":/workspace",
 		"--mount-file", worktree + "/host-notes.txt:/mnt/host-notes.txt:ro",
 		"--mount-dir", worktree + "/host-state:/mnt/host-state",
+		"--mount-named", ns + "-go_build:/root/.cache/go-build",
+		"--mount-named", ns + "-go_mod:/go/pkg/mod",
 		"--label", "sbx.managed=1",
 		"--label", "sbx.mode=disposable",
 		"--label", "sbx.worktree=" + worktree,
@@ -240,11 +256,22 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 	if !equal(spliceGenerated(runCall), want) {
 		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
 	}
-	conf := fake.SecretConf(t, 2)
+	conf := fake.SecretConf(t, 3)
 	if !strings.Contains(conf, `value: "${SBX_FIXTURE_TOKEN}"`) {
 		t.Errorf("secret map is missing the source reference:\n%s", conf)
 	}
 	if strings.Contains(conf, "throwaway-fixture-token") {
 		t.Errorf("secret map contains the host secret value:\n%s", conf)
 	}
+}
+
+// fixtureVolumeNamespace derives the Project volume namespace for the
+// worktree, the way the CLI does.
+func fixtureVolumeNamespace(t *testing.T, worktree string) string {
+	t.Helper()
+	info, err := gitx.Discover(context.Background(), worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity.VolumeNamespace(info.CommonDir)
 }

@@ -509,7 +509,11 @@ func TestCreateArgsFullSurface(t *testing.T) {
 			{Source: "/src", Target: "/workspace"},
 			{Source: "/notes", Target: "/mnt/notes", ReadOnly: true, IsFile: true},
 		},
-		Named: []NamedMount{{Name: "abc-cache", Target: "/cache"}},
+		Named: []NamedMount{
+			{Name: "abc-cache", Target: "/cache"},
+			{Name: "abc-data", Target: "/data", Kind: "disk", Size: "8G"},
+			{Name: "abc-capped", Target: "/capped", Kind: "dir", Quota: "4G"},
+		},
 		Owned: []OwnedMount{
 			{Target: "/scratch"},
 			{Target: "/data", Kind: "disk", Size: "8G"},
@@ -530,6 +534,8 @@ func TestCreateArgsFullSurface(t *testing.T) {
 		"--mount-dir", "/src:/workspace",
 		"--mount-file", "/notes:/mnt/notes:ro",
 		"--mount-named", "abc-cache:/cache",
+		"--mount-named", "abc-data:/data:kind=disk,size=8G",
+		"--mount-named", "abc-capped:/capped:quota=4G",
 		"--mount-owned", "/scratch",
 		"--mount-owned", "/data:kind=disk,size=8G",
 		"--env", "A=1",

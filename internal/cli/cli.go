@@ -11,7 +11,9 @@ import (
 
 	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/gitx"
+	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/plan"
+	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
 // Exit codes follow common CLI conventions: 0 for success, 1 for runtime
@@ -94,8 +96,58 @@ func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	p := plan.Compose(info, cfg)
+	checkPlanVolumes(ctx, msb.CLI{}, &p)
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
+}
+
+// checkPlanVolumes runs the Project volume compatibility check for the
+// rendered plan. It is read-only: the backend's listing is inspected and
+// nothing changes. A failed or malformed inspection is recorded for the
+// report, never read as an empty listing or as compatible definitions.
+func checkPlanVolumes(ctx context.Context, box msb.CLI, p *plan.Plan) {
+	if p.TranslateErr != nil || len(p.Translation.ProjectVolumes) == 0 {
+		return
+	}
+	report, err := inspectProjectVolumes(ctx, box, p.Translation.ProjectVolumes)
+	if err != nil {
+		p.VolumeCheckErr = err
+		return
+	}
+	p.VolumeReport = &report
+}
+
+// inspectProjectVolumes reads the backend's volume listing and checks
+// every declared Project volume against it. The listing's own failure and
+// malformed records surface as errors; an unreadable backend is never an
+// empty one.
+func inspectProjectVolumes(ctx context.Context, box msb.CLI, declared []volumes.Declared) (volumes.Report, error) {
+	existing, err := box.Volumes(ctx)
+	if err != nil {
+		return volumes.Report{}, err
+	}
+	return volumes.Check(declared, existing)
+}
+
+// checkProjectVolumes refuses a sandbox mutation when a declared Project
+// volume clashes with the volume the backend already holds under its
+// derived name (ADR-0003): every declared volume is compared before
+// anything is created, pulled, or started. A missing or malformed
+// inspection fails the command rather than passing as an empty listing or
+// a compatible definition. sbx never resizes, overwrites, or deletes an
+// existing volume.
+func checkProjectVolumes(ctx context.Context, box msb.CLI, declared []volumes.Declared) error {
+	if len(declared) == 0 {
+		return nil
+	}
+	report, err := inspectProjectVolumes(ctx, box, declared)
+	if err != nil {
+		return fmt.Errorf("inspecting the backend's volumes before creation: %w", err)
+	}
+	if len(report.Conflicts) > 0 {
+		return fmt.Errorf("declared Project volume(s) conflict with existing backend volumes; nothing was created or changed:\n\n%s", volumes.FormatConflicts(report.Conflicts))
+	}
+	return nil
 }
 
 // discoverConfig finds the worktree root from the current directory and

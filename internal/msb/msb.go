@@ -172,13 +172,19 @@ type Mount struct {
 	IsFile bool
 }
 
-// NamedMount mounts an existing named volume, passed as
-// --mount-named NAME:DEST. Project volumes use it.
+// NamedMount mounts a named volume, passed as --mount-named NAME:DEST
+// optionally followed by the volume's definition. Project volumes use it.
 type NamedMount struct {
 	// Name is the backend volume name.
 	Name string
 	// Target is an absolute guest path.
 	Target string
+	// Kind is "dir" (the msb default) or "disk".
+	Kind string
+	// Size is required for disks, in msb's format.
+	Size string
+	// Quota limits a directory volume, in msb's format.
+	Quota string
 }
 
 // OwnedMount creates a private volume removed with its sandbox, passed as
@@ -432,7 +438,24 @@ func CreateArgs(o CreateOptions) []string {
 		args = append(args, flag, spec)
 	}
 	for _, nm := range o.Named {
-		args = append(args, "--mount-named", nm.Name+":"+nm.Target)
+		spec := nm.Name + ":" + nm.Target
+		// The definition travels with the mount so msb itself refuses to
+		// attach an existing volume whose shape disagrees — a backstop
+		// behind sbx's own compatibility check. The option spelling
+		// mirrors --mount-owned's (kind=disk,size=..., quota=...),
+		// which is verified; --mount-named taking the same options is
+		// UNVERIFIED on a real host.
+		var opts []string
+		if nm.Kind == "disk" {
+			opts = append(opts, "kind=disk", "size="+nm.Size)
+		}
+		if nm.Quota != "" {
+			opts = append(opts, "quota="+nm.Quota)
+		}
+		if len(opts) > 0 {
+			spec += ":" + strings.Join(opts, ",")
+		}
+		args = append(args, "--mount-named", spec)
 	}
 	for _, om := range o.Owned {
 		spec := om.Target

@@ -16,6 +16,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
+	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
 // Translation is the backend-facing rendering of one worktree's project
@@ -35,6 +36,10 @@ type Translation struct {
 	Secrets []config.SecretConfig
 	// SecretNames are the declared secret names in name order.
 	SecretNames []string
+	// ProjectVolumes are the declared Project volumes in name order, with
+	// their derived backend names, for the pre-creation compatibility
+	// check against the backend's existing volumes (ADR-0003).
+	ProjectVolumes []volumes.Declared
 	// Tmpfs are the declared tmpfs mounts in declaration order.
 	Tmpfs []Tmpfs
 	// FsConfYAML is the generated filesystem configuration carrying the
@@ -89,9 +94,21 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 		v := cfg.Volumes[name]
 		switch v.Scope {
 		case "project":
+			backend := identity.VolumeName(info.CommonDir, name)
 			named = append(named, msb.NamedMount{
-				Name:   identity.VolumeName(info.CommonDir, name),
+				Name:   backend,
 				Target: v.Target,
+				Kind:   v.Kind,
+				Size:   v.Size,
+				Quota:  v.Quota,
+			})
+			t.ProjectVolumes = append(t.ProjectVolumes, volumes.Declared{
+				Logical: name,
+				Backend: backend,
+				Target:  v.Target,
+				Kind:    v.Kind,
+				Size:    v.Size,
+				Quota:   v.Quota,
 			})
 		case "sandbox":
 			owned = append(owned, msb.OwnedMount{Target: v.Target, Kind: v.Kind, Size: v.Size})
