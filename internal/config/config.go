@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -18,13 +19,13 @@ import (
 // Later releases extend it; anything else must be rejected explicitly rather
 // than silently ignored.
 const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
-[volumes], [env], [secrets], and [network] (with allow and dns_nameservers)`
+[volumes], [env], [secrets], [network] (with allow and dns_nameservers),
+and [build]`
 
 // notYetSupported are field names that the spec defines but this build does
 // not translate yet. Declaring any of them is an error, not a warning.
 var notYetSupported = map[string]struct{}{
 	"ports":       {},
-	"build":       {},
 	"bootstrap":   {},
 	"image_check": {},
 }
@@ -41,6 +42,26 @@ type Config struct {
 	Env       map[string]string       `toml:"env"`
 	Secrets   map[string]SecretConfig `toml:"secrets"`
 	Network   NetworkConfig           `toml:"network"`
+	// Build is the optional [build] recipe; nil means the image is prebuilt
+	// and may be pulled, while a declared recipe means `sbx build` builds
+	// and imports it and nothing else may.
+	Build *BuildConfig `toml:"build"`
+}
+
+// BuildConfig is the optional [build] table: the Docker recipe for the
+// project's image.
+type BuildConfig struct {
+	// Context is the build context directory: absolute, relative to the
+	// worktree root, or starting with "~".
+	Context string `toml:"context"`
+	// Dockerfile names the Dockerfile, resolved like Context; empty means
+	// <context>/Dockerfile, which Docker defaults to.
+	Dockerfile string `toml:"dockerfile"`
+	// Target is the optional Dockerfile stage to build.
+	Target string `toml:"target"`
+	// Platform is the target platform, defaulting to linux/<host
+	// architecture>.
+	Platform string `toml:"platform"`
 }
 
 // WorkspaceConfig is the optional [workspace] table. An absent table keeps
@@ -139,6 +160,10 @@ func (c *Config) applyDefaults() {
 			c.Volumes[name] = v
 		}
 	}
+	if c.Build != nil && c.Build.Platform == "" {
+		// OCI architecture names match GOARCH for the platforms v1 runs on.
+		c.Build.Platform = "linux/" + runtime.GOARCH
+	}
 }
 
 // strictFields rejects every key the target struct does not recognize, so
@@ -184,6 +209,7 @@ func (c *Config) Validate() error {
 	problems = append(problems, c.validateEnv()...)
 	problems = append(problems, c.validateSecrets()...)
 	problems = append(problems, c.Network.validate()...)
+	problems = append(problems, c.validateBuild()...)
 	if len(problems) > 0 {
 		return fmt.Errorf("sbx.toml is invalid:\n  %s", strings.Join(problems, "\n  "))
 	}
@@ -374,9 +400,29 @@ func (c *Config) validateSecrets() []string {
 	return problems
 }
 
+// validateBuild checks the optional [build] recipe. The context's existence
+// is checked where the worktree root is known (at build time), not here.
+func (c *Config) validateBuild() []string {
+	if c.Build == nil {
+		return nil
+	}
+	var problems []string
+	if strings.TrimSpace(c.Build.Context) == "" {
+		problems = append(problems, "build: context is required, the host directory Docker builds from")
+	}
+	if c.Build.Platform != "" && !platformRe.MatchString(c.Build.Platform) {
+		problems = append(problems, fmt.Sprintf("build: platform %q must be os/architecture with an optional variant, such as linux/amd64 or linux/arm/v7", c.Build.Platform))
+	}
+	return problems
+}
+
 // sizeRe matches msb's size format: a nonzero integer without leading zeros,
 // with a K, M, or G suffix.
 var sizeRe = regexp.MustCompile(`^[1-9][0-9]*[KMG]$`)
+
+// platformRe matches an OCI platform: os/architecture with an optional
+// variant, such as linux/amd64 or linux/arm/v7.
+var platformRe = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`)
 
 // volumeNameRe matches volume and port names.
 var volumeNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)

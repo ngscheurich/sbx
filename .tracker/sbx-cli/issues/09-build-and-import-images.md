@@ -1,6 +1,6 @@
 # Build and import an image explicitly
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02, 03
 
 ## Goal
@@ -16,3 +16,13 @@ Add `sbx build` for `[build]`: invoke Docker/buildx with context, Dockerfile, ta
 ## References
 
 [Images and build](../spec.md); [ADR-0006](../../../docs/adrs/0006-drive-msb-through-its-cli.md).
+
+## Comments
+
+Implemented 2026-10-07.
+
+- `sbx build [--keep-archive]` (`internal/cli/build.go`): resolves the `[build]` recipe against the worktree root (shared `translate.ResolveHostPath` rules: absolute, worktree-relative, `~`-prefixed, never interpolated), checks both tools up front with install guidance, confirms the local backend before Docker runs, then `docker build` / `docker save --output` to a `sbx-build-*.tar` temporary outside the repository / `msb load --input`. The archive is removed on success, failure, and cancellation; `--keep-archive` retains it and names it. The build/save/load spelling follows `scripts/sbx-load.sh`, verified against msb 0.7.6 — plain `docker build` (buildx is the builder underneath), not a `buildx --output` one-liner.
+- Config: `[build]` parses with `context` required and `platform` defaulting to `linux/<host arch>`; `ports`, `bootstrap`, and `image_check` stay rejected, and the build path re-pins that `image_check` fails before any tool runs (isolated check lands in ticket 10).
+- Missing images: `[build]` projects get "run `sbx build`" from `up`/`exec`/`run` with no pull attempted; prebuilt projects keep the pull path. Creation drift already compared content digests; `TestRebuildBehindSameTagDriftsPersistentSandbox` now pins the whole rebuild lifecycle through `sbx build` — drifted, never replaced, `--allow-stale` usable, disposable runs take the new image, and docker sees zero calls outside explicit builds.
+- New seams: `internal/docker` adapter (argv pinned by unit tests), fake docker in `internal/testsupport` (builtin-only fast paths so missing-tool tests can scrub PATH), fake msb learned `load` with a `FAKE_MSB_LOAD_REQUIRES` marker pinning export-before-import ordering.
+- Not done here, by design: running the image check after import (ticket 10), and no git commit was created — this checkout's `.git` points at a worktree gitdir on the original author's machine, which is not reachable from the environment the work ran in.

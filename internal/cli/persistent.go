@@ -382,7 +382,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale b
 	}
 
 	if !exists {
-		digest, err := ensureImage(ctx, box, p.cfg.Image)
+		digest, err := ensureImage(ctx, box, p.cfg)
 		if err != nil {
 			return "", err
 		}
@@ -489,17 +489,23 @@ func errUnowned(name string) error {
 	return fmt.Errorf("a sandbox named %s already exists, but sbx did not create it; sbx never adopts, modifies, or removes a sandbox it does not own. If it is yours to remove, do so with `msb remove %s` and run sbx again", name, name)
 }
 
-// ensureImage resolves the image's manifest digest, pulling a missing
-// prebuilt image first. When both inspection and pull fail, both errors
-// and a concrete next step surface, exactly as on the disposable path.
-func ensureImage(ctx context.Context, box msb.CLI, image string) (string, error) {
+// ensureImage resolves the image's manifest digest. A missing image with a
+// [build] recipe is an instruction to run `sbx build` — creation never
+// builds and never pulls it — while a missing prebuilt image may be
+// pulled. When both inspection and pull fail, both errors and a concrete
+// next step surface, exactly as on the disposable path.
+func ensureImage(ctx context.Context, box msb.CLI, cfg config.Config) (string, error) {
+	image := cfg.Image
 	info, err := box.ImageInspect(ctx, image)
 	if err == nil {
 		return info.ManifestDigest, nil
 	}
+	if cfg.Build != nil {
+		return "", errImageNeedsBuild(image)
+	}
 	inspectErr := err
 	if err := box.Pull(ctx, image); err != nil {
-		return "", fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; `sbx build` will automate this", image, inspectErr, err, image)
+		return "", fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, inspectErr, err, image)
 	}
 	info, err = box.ImageInspect(ctx, image)
 	if err != nil {

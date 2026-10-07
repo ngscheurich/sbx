@@ -29,6 +29,7 @@ Usage:
 
 Commands:
   plan    Show what sbx would create for this worktree's persistent sandbox, changing nothing
+  build   Build this project's image with Docker and import it into msb (requires [build])
   run     Run a one-off guest command in a disposable sandbox, removed afterward
   up      Create or start this worktree's persistent sandbox, refusing drift unless --allow-stale
   exec    Run a guest command in the persistent sandbox (created or started first), leaving it running
@@ -37,7 +38,7 @@ Commands:
   stop    Stop the persistent sandbox, keeping its state and volumes
   rm      Remove the persistent sandbox after confirmation (--yes in noninteractive use)
 
-The remaining v1 commands, build and port prune, arrive in later releases.
+The remaining v1 command, port prune, arrives in a later release.
 
 Run sbx from any directory inside a Git worktree that has an sbx.toml.
 `
@@ -61,6 +62,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return exitUsage
 		}
 		return runPlan(ctx, stdout, stderr)
+	case "build":
+		return runBuild(ctx, args, stdout, stderr)
 	case "run":
 		return runDisposable(ctx, args, stdin, stdout, stderr)
 	case "up":

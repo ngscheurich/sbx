@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -89,8 +90,8 @@ func fixtureRepoFrom(t *testing.T, fixture string) string {
 const fixtureRestrictedDir = "../../fixtures/restricted-cli"
 
 // TestFixtureRestrictedFailsClosedVerbatim copies the complete fixture and
-// checks that `sbx run` refuses it before any backend call: [build] is not
-// supported yet and its Project volumes have no compatibility checks yet.
+// checks that `sbx run` refuses it before any backend call: its Project
+// volumes have no compatibility checks yet, so the preflight fails closed.
 // Fail-closed is the contract; which gate fires first may change as those
 // features land.
 func TestFixtureRestrictedFailsClosedVerbatim(t *testing.T) {
@@ -109,18 +110,54 @@ func TestFixtureRestrictedFailsClosedVerbatim(t *testing.T) {
 	}
 }
 
-// TestFixtureRestrictedPlanTranslation checks the Plan for the fixture with
-// [build] removed: both binds, both Project volumes with their namespaced
-// names, the allowlist with DNS, and the redacted secret map.
+// TestFixtureRestrictedBuildVerbatim copies the complete fixture and checks
+// that `sbx build` builds and imports its image: the build needs neither
+// the Project volumes' pending compatibility checks nor the secret's host
+// variable, so the verbatim fixture builds as-is.
+func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
+	msbLog := testsupport.FakeMSB(t)
+	dockerLog := testsupport.FakeDocker(t)
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("FAKE_MSB_LOAD_REQUIRES", dockerLog.SavedMarker())
+	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
+
+	var stdout, stderr bytes.Buffer
+	code := chdir(t, worktree, func() int {
+		return Run(context.Background(), []string{"build"}, nil, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("build failed on the verbatim fixture: %s", stderr.String())
+	}
+
+	dockerCalls := dockerLog.Calls()
+	if len(dockerCalls) != 2 {
+		t.Fatalf("fake docker saw %d calls:\n%s", len(dockerCalls), dockerCallDump(dockerCalls))
+	}
+	wantBuild := []string{"build",
+		"--platform", "linux/" + runtime.GOARCH,
+		"--file", filepath.Join(worktree, "Dockerfile"),
+		"--tag", "sbx-restricted-cli:latest",
+		worktree,
+	}
+	if got := dockerCalls[0].Args; !equal(got, wantBuild) {
+		t.Errorf("docker build argv mismatch:\n got: %q\nwant: %q", got, wantBuild)
+	}
+	archive := archiveFromSaveCall(t, dockerCalls[1])
+
+	msbCalls := msbLog.Calls()
+	if len(msbCalls) != 2 {
+		t.Fatalf("fake msb saw %d calls:\n%s", len(msbCalls), callDump(msbCalls))
+	}
+	if got := msbCalls[1].Args; !equal(got, []string{"load", "--input", archive}) {
+		t.Errorf("msb load argv mismatch:\n got: %q\nwant the exported archive", got)
+	}
+}
+
+// TestFixtureRestrictedPlanTranslation checks the Plan for the verbatim
+// fixture: both binds, both Project volumes with their namespaced names,
+// the allowlist with DNS, and the redacted secret map.
 func TestFixtureRestrictedPlanTranslation(t *testing.T) {
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// Rewrite sbx.toml without [build]; the Project volumes stay. The
-	// variant is derived from the fixture so the two cannot drift.
-	withoutBuild := testsupport.FixtureTOML(t,
-		filepath.Join(fixtureRestrictedDir, "sbx.toml"), "[build]")
-	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(withoutBuild), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, worktree, func() int {
@@ -157,12 +194,13 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// The executable variant is the fixture minus [build] and the Project
-	// volumes, which this build does not support yet; derived from the
-	// fixture file.
+	// The executable variant is the fixture minus the Project volumes,
+	// whose compatibility checks do not exist yet; derived from the fixture
+	// file so the two cannot drift. [build] stays: `sbx run` inspects the
+	// image and runs without building anything.
 	variant := testsupport.FixtureTOML(t,
 		filepath.Join(fixtureRestrictedDir, "sbx.toml"),
-		"[build]", "[volumes.go_mod]", "[volumes.go_build]")
+		"[volumes.go_mod]", "[volumes.go_build]")
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
 		t.Fatal(err)
 	}

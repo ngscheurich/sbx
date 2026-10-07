@@ -25,6 +25,9 @@ import (
 //	                            recorded for created sandboxes (default sha256:fake)
 //	FAKE_MSB_PULL_FAIL         set to make "image pull" fail
 //	FAKE_MSB_CREATE_FAIL       substring that makes "create" fail when the name matches
+//	FAKE_MSB_LOAD_FAIL         set to make "load" fail
+//	FAKE_MSB_LOAD_REQUIRES     a path that must exist when "load" runs (lets a
+//	                            test pin that the import follows the archive's creation)
 //	FAKE_MSB_EXEC_SLEEP         seconds "exec" sleeps before answering (interruptible via SIGTERM)
 //	FAKE_MSB_EXEC_FAIL_START    set to make "exec" exit 127 without running the guest
 //	FAKE_MSB_EXIT               exit status of "exec" (default 0)
@@ -92,6 +95,29 @@ set_status() {
 }
 
 case "$1" in
+load)
+  if [ -n "$FAKE_MSB_LOAD_FAIL" ]; then
+    echo "sbx-fake-msb: load failed" >&2
+    exit 1
+  fi
+  input=""
+  prev=""
+  for a in "$@"; do
+    if [ "$prev" = "--input" ]; then
+      input="$a"
+    fi
+    prev="$a"
+  done
+  if [ -n "$FAKE_MSB_LOAD_REQUIRES" ] && [ ! -e "$FAKE_MSB_LOAD_REQUIRES" ]; then
+    echo "sbx-fake-msb: load ran before $FAKE_MSB_LOAD_REQUIRES existed" >&2
+    exit 1
+  fi
+  if [ -z "$input" ] || [ ! -f "$input" ]; then
+    echo "sbx-fake-msb: cannot open image archive $input" >&2
+    exit 1
+  fi
+  printf '%s\n' "$input" > "$dir/loaded.$n"
+  ;;
 context)
   printf '{"backend":"%s"}\n' "${FAKE_MSB_CONTEXT_BACKEND:-local}"
   ;;
@@ -294,16 +320,18 @@ func FakeMSB(t *testing.T) Log {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FAKE_MSB_LOG", log)
-	return Log{dir: log}
+	return Log{callLog{dir: log}}
 }
 
-// Log is the recorded behavior of a fake msb executable.
-type Log struct {
+// callLog reads the call recording shared by every fake executable: one
+// call.<n> file per invocation, the first line the observed MSB_BACKEND,
+// then one argument per line.
+type callLog struct {
 	dir string
 }
 
 // Wait blocks until the fake has recorded at least n calls.
-func (l Log) Wait(t *testing.T, n int) {
+func (l callLog) Wait(t *testing.T, n int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -311,14 +339,14 @@ func (l Log) Wait(t *testing.T, n int) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("fake msb recorded %d calls, wanted at least %d", len(l.Calls()), n)
+			t.Fatalf("fake executable recorded %d calls, wanted at least %d", len(l.Calls()), n)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 }
 
 // Calls returns every recorded invocation in order.
-func (l Log) Calls() []Call {
+func (l callLog) Calls() []Call {
 	entries, err := os.ReadDir(l.dir)
 	if err != nil {
 		return nil
@@ -349,6 +377,22 @@ func (l Log) Calls() []Call {
 	}
 	sort.Slice(calls, func(i, j int) bool { return calls[i].Index < calls[j].Index })
 	return calls
+}
+
+// Log is the recorded behavior of a fake msb executable.
+type Log struct {
+	callLog
+}
+
+// Loaded returns the archive path the fake recorded for the `msb load` call
+// at the given index.
+func (l Log) Loaded(t *testing.T, index int) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(l.dir, "loaded."+strconv.Itoa(index)))
+	if err != nil {
+		t.Fatalf("reading fake msb load capture for call %d: %v", index, err)
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // Stdin returns what the fake's exec handed to the guest on standard input.

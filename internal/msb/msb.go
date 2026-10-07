@@ -614,7 +614,18 @@ func (c CLI) PullIfMissing(ctx context.Context, image string) error {
 	if pullErr == nil {
 		return nil
 	}
-	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; `sbx build` will automate this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
+	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
+}
+
+// Load runs `msb load --input <archive>`, importing an exported image
+// archive into msb's image store, which is separate from Docker's. The
+// `load --input` spelling is verified against msb 0.7.6 (see
+// scripts/sbx-load.sh). Only `sbx build` calls it.
+func (c CLI) Load(ctx context.Context, archive string) error {
+	if _, err := c.run(ctx, "load", "--input", archive); err != nil {
+		return fmt.Errorf("importing the image archive into msb: %w", err)
+	}
+	return nil
 }
 
 // Pull runs `msb image pull <image>`: one backend mutation, so persistent
