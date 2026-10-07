@@ -317,7 +317,7 @@ func (p Plan) renderLive(b *strings.Builder) {
 	}
 	fmt.Fprintf(b, "\nexisting sandbox:\n")
 	if p.Live.ListErr != nil {
-		fmt.Fprintf(b, "  state: unknown (the backend's listing failed: %v)\n", p.Live.ListErr)
+		fmt.Fprintf(b, "  state: unknown (the backend’s listing failed: %v)\n", p.Live.ListErr)
 		return
 	}
 	if p.Live.InspectErr != nil {
@@ -343,7 +343,7 @@ func (p Plan) renderLive(b *strings.Builder) {
 	switch p.Live.Bootstrap {
 	case "":
 	case "complete":
-		fmt.Fprintf(b, "  bootstrap: complete (recorded for this sandbox's creation)\n")
+		fmt.Fprintf(b, "  bootstrap: complete (recorded for this sandbox’s creation)\n")
 	case "changed":
 		fmt.Fprintf(b, "  bootstrap: complete, but the definition has changed since it ran; that is not Creation drift and does not block use\n")
 	case "incomplete":

@@ -115,7 +115,7 @@ func runBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return fatal(err)
 	}
 
-	fmt.Fprintf(stdout, "built %s for %s and imported it into msb's image store\n", cfg.Image, cfg.Build.Platform)
+	fmt.Fprintf(stdout, "built %s for %s and imported it into msb’s image store\n", cfg.Image, cfg.Build.Platform)
 	if keepArchive {
 		fmt.Fprintf(stdout, "image archive kept for debugging: %s\n", archivePath)
 	}
@@ -152,5 +152,5 @@ func resolveBuildPaths(info gitx.Info, b *config.BuildConfig) (contextDir, docke
 // image is absent from msb's image store: building is `sbx build`'s job
 // alone, so the caller is told to build rather than offered a pull.
 func errImageNeedsBuild(image string) error {
-	return fmt.Errorf("image %s is not available to msb, and this project builds it from its [build] recipe: run `sbx build` to build and import it (msb's image store is separate from Docker's)", image)
+	return fmt.Errorf("image %s is not available to msb, and this project builds it from its [build] recipe: run `sbx build` to build and import it (msb’s image store is separate from Docker’s)", image)
 }

@@ -277,7 +277,7 @@ type ListEntry struct {
 func (c CLI) List(ctx context.Context) ([]ListEntry, error) {
 	out, err := c.run(ctx, "ls", "--format", "json")
 	if err != nil {
-		return nil, fmt.Errorf("listing the backend's sandboxes: %w", err)
+		return nil, fmt.Errorf("listing the backend’s sandboxes: %w", err)
 	}
 	trimmed := strings.TrimSpace(out)
 	var entries []ListEntry
@@ -379,7 +379,7 @@ func (c CLI) Stop(ctx context.Context, name string) error {
 func (c CLI) Logs(ctx context.Context, name string) (string, error) {
 	out, err := c.run(ctx, "logs", name)
 	if err != nil {
-		return "", fmt.Errorf("reading sandbox %s's logs: %w", name, err)
+		return "", fmt.Errorf("reading sandbox %s’s logs: %w", name, err)
 	}
 	return out, nil
 }
@@ -682,7 +682,7 @@ func (c CLI) PullIfMissing(ctx context.Context, image string) error {
 	if pullErr == nil {
 		return nil
 	}
-	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
+	return fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb’s image store is separate from Docker’s: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, firstLine(inspectErr.Error()), firstLine(pullErr.Error()), image)
 }
 
 // Load runs `msb load --input <archive>`, importing an exported image

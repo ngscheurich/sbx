@@ -107,7 +107,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 	// a success is recorded only when that is still the digest the check
 	// was started for.
 	if info, err := box.ImageInspect(ctx, cfg.Image); err != nil {
-		return fmt.Errorf("confirming %s's contents after the image check: %w", cfg.Image, err)
+		return fmt.Errorf("confirming %s’s contents after the image check: %w", cfg.Image, err)
 	} else if info.ManifestDigest != digest {
 		return fmt.Errorf("image %s changed while its image check ran (%s became %s); nothing was recorded — run the command again to check the new contents", cfg.Image, digest, info.ManifestDigest)
 	}
@@ -134,7 +134,7 @@ func ensureImageChecked(ctx context.Context, box msb.CLI, cfg config.Config, wor
 	}
 	info, err := box.ImageInspect(ctx, cfg.Image)
 	if err != nil {
-		return fmt.Errorf("the image check needs %s's contents, but msb cannot inspect the image: %w", cfg.Image, err)
+		return fmt.Errorf("the image check needs %s’s contents, but msb cannot inspect the image: %w", cfg.Image, err)
 	}
 	digest := info.ManifestDigest
 	ok, err := recordedPass(digest, script)
@@ -148,7 +148,7 @@ func ensureImageChecked(ctx context.Context, box msb.CLI, cfg config.Config, wor
 	}
 	info, err = box.ImageInspect(ctx, cfg.Image)
 	if err != nil {
-		return fmt.Errorf("confirming %s's contents after the image check: %w", cfg.Image, err)
+		return fmt.Errorf("confirming %s’s contents after the image check: %w", cfg.Image, err)
 	}
 	if info.ManifestDigest != digest {
 		return fmt.Errorf("image %s changed while its image check ran (%s became %s); nothing was created — run the command again to check the new contents", cfg.Image, digest, info.ManifestDigest)
@@ -185,7 +185,7 @@ func ensureSandboxImageChecked(ctx context.Context, box msb.CLI, p *persistent, 
 		return fmt.Errorf("the persistent sandbox %s was created from image contents %s, which have no recorded image-check pass for the current script, and msb cannot inspect %s to re-check them: %w", p.id.Sandbox, sandboxDigest, p.cfg.Image, err)
 	}
 	if info.ManifestDigest != sandboxDigest {
-		return fmt.Errorf("the persistent sandbox %s was created from image contents %s, which have no recorded image-check pass for the current script, and %s now resolves to %s; sbx cannot run the check against the sandbox's contents, so it refuses to use the sandbox", p.id.Sandbox, sandboxDigest, p.cfg.Image, info.ManifestDigest)
+		return fmt.Errorf("the persistent sandbox %s was created from image contents %s, which have no recorded image-check pass for the current script, and %s now resolves to %s; sbx cannot run the check against the sandbox’s contents, so it refuses to use the sandbox", p.id.Sandbox, sandboxDigest, p.cfg.Image, info.ManifestDigest)
 	}
 	return runCheckSandbox(ctx, box, p.cfg, p.info.WorktreeRoot, p.id.Sandbox, script, sandboxDigest, stdout, stderr)
 }

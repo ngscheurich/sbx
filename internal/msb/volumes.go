@@ -35,7 +35,7 @@ type VolumeInfo struct {
 func (c CLI) Volumes(ctx context.Context) ([]VolumeInfo, error) {
 	out, err := c.run(ctx, "volumes", "--format", "json")
 	if err != nil {
-		return nil, fmt.Errorf("listing the backend's volumes: %w", err)
+		return nil, fmt.Errorf("listing the backend’s volumes: %w", err)
 	}
 	trimmed := strings.TrimSpace(out)
 	var records []VolumeInfo

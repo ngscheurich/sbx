@@ -83,7 +83,7 @@ func reconcileCreatedPorts(ctx context.Context, box msb.CLI, p *persistent) erro
 	}
 	s, err := box.Inspect(ctx, p.id.Sandbox)
 	if err != nil {
-		return fmt.Errorf("verifying the new sandbox's published ports: %w", err)
+		return fmt.Errorf("verifying the new sandbox’s published ports: %w", err)
 	}
 	return reconcilePorts(p, s)
 }
@@ -121,7 +121,7 @@ func reconcilePorts(p *persistent, s msb.Sandbox) error {
 	}
 	actual, err := s.PortsOf()
 	if err != nil {
-		return fmt.Errorf("reading the sandbox's published ports: %w", err)
+		return fmt.Errorf("reading the sandbox’s published ports: %w", err)
 	}
 	return ports.Reconcile(p.id.Sandbox, declaredPorts(p.tr), actual)
 }
@@ -134,7 +134,7 @@ func reconcilePorts(p *persistent, s msb.Sandbox) error {
 func reportPorts(sandbox string, s msb.Sandbox, stdout io.Writer) {
 	actual, err := s.PortsOf()
 	if err != nil {
-		fmt.Fprintf(stdout, "ports: the sandbox's published ports are unreadable (%v)\n", err)
+		fmt.Fprintf(stdout, "ports: the sandbox’s published ports are unreadable (%v)\n", err)
 		return
 	}
 	switch {

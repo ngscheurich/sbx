@@ -195,7 +195,7 @@ func runStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	}
 	switch boot {
 	case bootstrapComplete:
-		fmt.Fprintf(stdout, "bootstrap: complete (recorded for this sandbox's creation)\n")
+		fmt.Fprintf(stdout, "bootstrap: complete (recorded for this sandbox’s creation)\n")
 	case bootstrapChanged:
 		fmt.Fprintf(stdout, "bootstrap: complete, but the definition has changed since it ran; that is not Creation drift and does not block use\n")
 	case bootstrapIncomplete:
@@ -653,7 +653,7 @@ func ensureImage(ctx context.Context, box msb.CLI, cfg config.Config) (string, e
 	}
 	inspectErr := err
 	if err := box.Pull(ctx, image); err != nil {
-		return "", fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb's image store is separate from Docker's: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, inspectErr, err, image)
+		return "", fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb’s image store is separate from Docker’s: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, inspectErr, err, image)
 	}
 	info, err = box.ImageInspect(ctx, image)
 	if err != nil {

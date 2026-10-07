@@ -110,7 +110,7 @@ func Check(declared []Declared, existing []msb.VolumeInfo) (Report, error) {
 	byName := make(map[string]msb.VolumeInfo, len(existing))
 	for _, v := range existing {
 		if _, err := normalizeKind(v.Kind); err != nil {
-			return Report{}, fmt.Errorf("volume %q in the backend's listing has an unrecognized kind: %w", v.Name, err)
+			return Report{}, fmt.Errorf("volume %q in the backend’s listing has an unrecognized kind: %w", v.Name, err)
 		}
 		byName[v.Name] = v
 	}

@@ -61,7 +61,7 @@ func Reserve(sandbox string, declared []Declared, backendPorts func() ([]int, er
 		byPort := map[int]state.PortReservation{}
 		for _, r := range records {
 			if prior, dup := byPort[r.Port]; dup {
-				return nil, fmt.Errorf("the port registry holds two reservations for port %d (%s's %s and %s's %s); correct or prune it with `sbx port prune`",
+				return nil, fmt.Errorf("the port registry holds two reservations for port %d (%s’s %s and %s’s %s); correct or prune it with `sbx port prune`",
 					r.Port, prior.Sandbox, prior.Name, r.Sandbox, r.Name)
 			}
 			byPort[r.Port] = r
@@ -78,7 +78,7 @@ func Reserve(sandbox string, declared []Declared, backendPorts func() ([]int, er
 			}
 			ports, err := backendPorts()
 			if err != nil {
-				return nil, fmt.Errorf("inspecting the backend's published ports before choosing candidates: %w", err)
+				return nil, fmt.Errorf("inspecting the backend’s published ports before choosing candidates: %w", err)
 			}
 			backendUsed = map[int]bool{}
 			for _, p := range ports {
@@ -98,7 +98,7 @@ func Reserve(sandbox string, declared []Declared, backendPorts func() ([]int, er
 					continue
 				}
 				if other, conflict := byPort[r.Port]; conflict && (other.Sandbox != sandbox || other.Name != d.Name) {
-					return nil, fmt.Errorf("port %d is reserved for %s's %s; the registry for %s's %s cannot also hold it",
+					return nil, fmt.Errorf("port %d is reserved for %s’s %s; the registry for %s’s %s cannot also hold it",
 						r.Port, other.Sandbox, other.Name, sandbox, d.Name)
 				}
 				// The declared guest port travels with the record so the
@@ -200,7 +200,7 @@ func Reconcile(sandbox string, declared []Declared, actual []msb.PublishedPort) 
 				if r.Sandbox == sandbox && r.Name == name {
 					continue
 				}
-				return nil, fmt.Errorf("sandbox %s publishes port %d for %s, but the registry reserves that port for %s's %s; sbx fails rather than take it",
+				return nil, fmt.Errorf("sandbox %s publishes port %d for %s, but the registry reserves that port for %s’s %s; sbx fails rather than take it",
 					sandbox, host, name, r.Sandbox, r.Name)
 			}
 		}

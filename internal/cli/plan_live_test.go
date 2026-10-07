@@ -90,7 +90,7 @@ func TestLogsForwardsBackendFailures(t *testing.T) {
 	if code == 0 {
 		t.Fatal("logs succeeded while the backend's listing failed")
 	}
-	if !strings.Contains(stderr, "listing the backend's sandboxes") {
+	if !strings.Contains(stderr, "listing the backend’s sandboxes") {
 		t.Errorf("stderr does not carry the backend's failure:\n%s", stderr)
 	}
 }
