@@ -239,7 +239,13 @@ func renderNamed(named []msb.NamedMount) string {
 	}
 	parts := make([]string, 0, len(named))
 	for _, n := range named {
-		parts = append(parts, n.Name+" at "+n.Target)
+		spec := n.Name + " at " + n.Target
+		if n.Kind == "disk" {
+			spec += " (disk, " + n.Size + ")"
+		} else if n.Quota != "" {
+			spec += " (directory, quota " + n.Quota + ")"
+		}
+		parts = append(parts, spec)
 	}
 	return "[" + strings.Join(parts, "; ") + "]"
 }

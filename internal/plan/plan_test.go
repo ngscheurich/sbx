@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/identity"
+	"github.com/ngscheurich/sbx/internal/msb"
+	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
 // writeConfig writes a configuration to a temporary file and returns its
@@ -144,12 +147,81 @@ egress = "public"
 	}
 }
 
-func TestRenderNotesProjectVolumeGate(t *testing.T) {
+// TestRenderNotesProjectVolumeCheck covers the pure rendering: before the
+// caller runs the compatibility check against the backend, the plan notes
+// that the check happens before any creation rather than claiming an
+// outcome.
+func TestRenderNotesProjectVolumeCheck(t *testing.T) {
 	rendered := testPlan(t).Render()
-	if !strings.Contains(rendered, "compatibility checks are pending") {
-		t.Errorf("plan with project volumes does not note the pending gate:\n%s", rendered)
+	if !strings.Contains(rendered, "compatibility with existing volumes is checked before any creation") {
+		t.Errorf("plan with project volumes does not note the pre-creation check:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "reuses the existing volume") || strings.Contains(rendered, "will be created") {
+		t.Errorf("unchecked plan claims a compatibility outcome:\n%s", rendered)
 	}
 }
+
+// TestRenderReportsVolumeReuseAndCreation checks the rendered per-volume
+// outcomes once the check has run cleanly.
+func TestRenderReportsVolumeReuseAndCreation(t *testing.T) {
+	p := testPlan(t)
+	p.VolumeReport = &volumes.Report{Reused: []string{"cache"}}
+	rendered := p.Render()
+	if !strings.Contains(rendered, "project volume "+p.VolumeNamespace+"-cache at /var/cache (reuses the existing volume)") {
+		t.Errorf("rendered plan does not report the reuse:\n%s", rendered)
+	}
+
+	p.VolumeReport = &volumes.Report{Fresh: []string{"cache"}}
+	rendered = p.Render()
+	if !strings.Contains(rendered, "(will be created)") {
+		t.Errorf("rendered plan does not report the creation:\n%s", rendered)
+	}
+}
+
+// TestRenderReportsVolumeConflicts checks that a conflict renders both
+// definitions and the suggestion, while the plan footer still promises
+// nothing changed.
+func TestRenderReportsVolumeConflicts(t *testing.T) {
+	p := testPlan(t)
+	declared := p.Translation.ProjectVolumes[0]
+	p.VolumeReport = &volumes.Report{Conflicts: []volumes.Conflict{{
+		Declared:   declared,
+		Existing:   msb.VolumeInfo{Name: declared.Backend, Kind: "disk", CapacityBytes: int64Ptr(8589934592)},
+		Mismatches: []string{`kind: declared "dir", existing "disk"`},
+	}}}
+	rendered := p.Render()
+	for _, want := range []string{
+		"project volume conflicts",
+		"CONFLICT",
+		`"cache"`,
+		"declared in sbx.toml:",
+		"existing volume:",
+		`kind: declared "dir", existing "disk"`,
+		"another logical name",
+		"sbx changed nothing",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("rendered plan is missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+// TestRenderReportsVolumeCheckFailure checks that a failed or malformed
+// inspection renders as unknown, never as an empty listing or a
+// compatible definition.
+func TestRenderReportsVolumeCheckFailure(t *testing.T) {
+	p := testPlan(t)
+	p.VolumeCheckErr = errors.New("listing the backend's volumes: msb exploded")
+	rendered := p.Render()
+	if !strings.Contains(rendered, "compatibility could not be checked: listing the backend's volumes: msb exploded") {
+		t.Errorf("rendered plan does not report the failed check:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "reuses the existing volume") || strings.Contains(rendered, "will be created") {
+		t.Errorf("failed check rendered as a compatibility outcome:\n%s", rendered)
+	}
+}
+
+func int64Ptr(v int64) *int64 { return &v }
 
 func TestRenderNeverContainsSecretValues(t *testing.T) {
 	rendered := testPlan(t).Render()

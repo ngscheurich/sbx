@@ -8,8 +8,8 @@
 // Bootstrap, image checks, and published ports belong to later tickets:
 // declaring them already fails closed in configuration parsing, and the
 // creation path re-checks nothing strict parsing has already refused.
-// Project volumes stay fail-closed through the shared preflight, because
-// their compatibility checks do not exist yet.
+// Declared Project volumes are checked for compatibility with the
+// backend's existing volumes before any creation (ADR-0003).
 package cli
 
 import (
@@ -341,9 +341,6 @@ func preparePersistent(ctx context.Context) (*persistent, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := preflight(cfg); err != nil {
-		return nil, err
-	}
 	if err := translate.CheckSecretEnv(cfg, os.LookupEnv); err != nil {
 		return nil, err
 	}
@@ -382,6 +379,11 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale b
 	}
 
 	if !exists {
+		// Every declared Project volume is checked against the backend's
+		// existing volumes before anything is created or pulled.
+		if err := checkProjectVolumes(ctx, box, p.tr.ProjectVolumes); err != nil {
+			return "", err
+		}
 		digest, err := ensureImage(ctx, box, p.cfg.Image)
 		if err != nil {
 			return "", err

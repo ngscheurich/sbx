@@ -450,30 +450,65 @@ func TestUpMissingImageCreationFailure(t *testing.T) {
 	}
 }
 
-// TestUpFailsClosedOnProjectVolumes checks that declared Project volumes
-// stop up before any backend call, until their compatibility checks land.
-func TestUpFailsClosedOnProjectVolumes(t *testing.T) {
+// TestUpCreatesWithProjectVolumes checks the creation path with declared
+// Project volumes: the compatibility listing runs before any mutation,
+// and the create argv carries each volume's definition — the disk's kind
+// and size, the directory's quota.
+func TestUpCreatesWithProjectVolumes(t *testing.T) {
 	worktree, fake := persistentFixture(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
 
-[volumes.cache]
-target = "/cache"
+[volumes.capped]
+target = "/capped"
 scope = "project"
+quota = "4G"
+
+[volumes.data]
+target = "/data"
+scope = "project"
+kind = "disk"
+size = "8G"
 
 [network]
 egress = "public"
 `)
+	id := sandboxIdentityOf(t, worktree)
 	code, _, stderr := sbxUp(t, worktree)
-	if code == 0 {
-		t.Fatal("up proceeded with declared Project volumes")
+	if code != 0 {
+		t.Fatalf("up with declared Project volumes failed: %s", stderr)
 	}
-	if !strings.Contains(stderr, "project volumes") {
-		t.Errorf("stderr does not name the rejection:\n%s", stderr)
+	calls := fake.Calls()
+	if len(calls) != 5 {
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	if got := fake.Calls(); len(got) != 0 {
-		t.Errorf("msb was called before rejection: %v", got)
+	// context, sandbox listing, volume listing, image inspect, create —
+	// the compatibility check runs before the image or sandbox is touched.
+	if got := calls[2].Args; !equal(got, []string{"volumes", "--format", "json"}) {
+		t.Errorf("third call mismatch: %q", got)
+	}
+	create := calls[4].Args
+	capped := projectVolumeName(t, worktree, "capped") + ":/capped:quota=4G"
+	data := projectVolumeName(t, worktree, "data") + ":/data:kind=disk,size=8G"
+	for i, a := range create {
+		if a == "--mount-named" && i+1 < len(create) {
+			switch create[i+1] {
+			case capped:
+				capped = ""
+			case data:
+				data = ""
+			}
+		}
+	}
+	if capped != "" || data != "" {
+		t.Errorf("create argv is missing project volumes %q and %q: %q", capped, data, create)
+	}
+	if _, err := os.Stat(snapshotPathOf(t, worktree)); err != nil {
+		t.Errorf("creation wrote no snapshot: %v", err)
+	}
+	if !strings.Contains(strings.Join(create, " "), id) {
+		t.Errorf("create argv lacks the sandbox identity %q: %q", id, create)
 	}
 }
 

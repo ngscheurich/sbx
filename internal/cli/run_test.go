@@ -295,35 +295,38 @@ func TestRunPullsMissingPrebuiltImage(t *testing.T) {
 	}
 }
 
-// TestRunFailsClosedOnProjectVolumes checks that a declared Project volume
-// stops the run before any msb call: its compatibility checks are not
-// implemented yet, so the volume must not be mounted unprotected.
-func TestRunFailsClosedOnProjectVolumes(t *testing.T) {
+// TestRunMountsProjectVolume checks that a declared Project volume passes
+// the compatibility check — nothing exists under its name yet — and
+// reaches msb as a --mount-named with its derived name.
+func TestRunMountsProjectVolume(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, `
-image = "alpine:3.20"
-cpus = 1
-memory = "1G"
-
-[volumes.cache]
-target = "/cache"
-scope = "project"
-
-[network]
-egress = "public"
-`)
+	worktree, _ := fixtureRepo(t, projectVolumeTOML)
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+		return Run(context.Background(), []string{"run", "--", "true"}, strings.NewReader(""), &stdout, &stderr)
 	})
-	if code == 0 {
-		t.Fatal("run succeeded with a declared Project volume")
+	if code != 0 {
+		t.Fatalf("run with a declared Project volume failed: %s", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "project volumes") {
-		t.Errorf("stderr does not name the project volumes: %s", stderr.String())
+	calls := fake.Calls()
+	if len(calls) != 4 {
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
 	}
-	if got := fake.Calls(); len(got) != 0 {
-		t.Errorf("msb was called before rejection: %v", got)
+	// context, volume listing, image inspect, run — in that order: the
+	// compatibility check runs before the image or sandbox is touched.
+	if got := calls[1].Args; !equal(got, []string{"volumes", "--format", "json"}) {
+		t.Errorf("second call mismatch: %q", got)
+	}
+	runCall := calls[3].Args
+	want := projectVolumeName(t, worktree, "cache") + ":/cache"
+	found := false
+	for i, a := range runCall {
+		if a == "--mount-named" && i+1 < len(runCall) && runCall[i+1] == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("run argv lacks --mount-named %s: %q", want, runCall)
 	}
 }
 

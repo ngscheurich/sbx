@@ -6,11 +6,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"syscall"
 
-	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/translate"
 )
@@ -49,9 +47,6 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	if err != nil {
 		return fatal(err)
 	}
-	if err := preflight(cfg); err != nil {
-		return fatal(err)
-	}
 
 	// Secret host values travel only through the msb subprocess's
 	// environment, which passes the host environment through; sbx checks
@@ -65,6 +60,11 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	}
 
 	if _, err := box.LocalContext(ctx); err != nil {
+		return fatal(err)
+	}
+	// Every declared Project volume is checked against the backend's
+	// existing volumes before anything is created or pulled.
+	if err := checkProjectVolumes(ctx, box, tr.ProjectVolumes); err != nil {
 		return fatal(err)
 	}
 	if err := box.PullIfMissing(ctx, cfg.Image); err != nil {
@@ -110,22 +110,4 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		return fatal(fmt.Errorf("running %s: %w", strings.Join(guestArgv, " "), err))
 	}
 	return code
-}
-
-// preflight rejects declared settings this build cannot honor before any
-// backend mutation. Project volumes are translated but their compatibility
-// checks do not exist yet, so declaring one fails closed until a later
-// release adds them.
-func preflight(cfg config.Config) error {
-	var project []string
-	for name, v := range cfg.Volumes {
-		if v.Scope == "project" {
-			project = append(project, name)
-		}
-	}
-	sort.Strings(project)
-	if len(project) > 0 {
-		return fmt.Errorf("project volumes (%s) are declared but their compatibility checks are not implemented yet; remove them or wait for the next sbx release", strings.Join(project, ", "))
-	}
-	return nil
 }

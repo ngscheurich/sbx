@@ -11,6 +11,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/translate"
+	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
 // Plan describes the intended persistent sandbox for one worktree. It is
@@ -34,6 +35,14 @@ type Plan struct {
 	// TranslateErr carries a translation failure, such as a missing bind
 	// source, so the Plan can report it instead of a partial translation.
 	TranslateErr error
+	// VolumeReport is the Project volume compatibility outcome, set by the
+	// caller after checking the backend's listing. Nil means the check did
+	// not run: Compose performs no backend I/O.
+	VolumeReport *volumes.Report
+	// VolumeCheckErr records a failed or malformed volume inspection. An
+	// uninspectable backend is reported, never read as an empty listing or
+	// as compatible definitions.
+	VolumeCheckErr error
 }
 
 // Compose derives the Plan from Git discovery and validated configuration.
@@ -121,13 +130,19 @@ func (p Plan) Render() string {
 			fmt.Fprintf(&b, "    - tmpfs %s (%s%s)\n", tf.Target, tf.Size, extra)
 		}
 	}
-	if len(tr.Options.Named) > 0 || len(tr.Options.Owned) > 0 {
+	if len(tr.ProjectVolumes) > 0 || len(tr.Options.Owned) > 0 {
 		fmt.Fprintf(&b, "  volumes:\n")
-		for _, nm := range tr.Options.Named {
-			fmt.Fprintf(&b, "    - %s: project volume %s at %s\n", logicalName(nm.Name), nm.Name, nm.Target)
+		for _, pv := range tr.ProjectVolumes {
+			fmt.Fprintf(&b, "    - %s: project volume %s at %s%s\n", pv.Logical, pv.Backend, pv.Target, p.volumeStatus(pv))
 		}
-		if len(tr.Options.Named) > 0 {
-			fmt.Fprintf(&b, "    (project volumes' compatibility checks are pending; sbx run currently refuses this configuration)\n")
+		if len(tr.ProjectVolumes) > 0 {
+			switch {
+			case p.VolumeCheckErr != nil:
+				fmt.Fprintf(&b, "    (compatibility could not be checked: %v;\n", p.VolumeCheckErr)
+				fmt.Fprintf(&b, "     an uninspectable backend is never treated as an empty or compatible one)\n")
+			case p.VolumeReport == nil:
+				fmt.Fprintf(&b, "    (compatibility with existing volumes is checked before any creation)\n")
+			}
 		}
 		for _, om := range tr.Options.Owned {
 			kind := "directory"
@@ -135,6 +150,14 @@ func (p Plan) Render() string {
 				kind = "disk (" + om.Size + ")"
 			}
 			fmt.Fprintf(&b, "    - %s: sandbox %s\n", om.Target, kind)
+		}
+		if p.VolumeReport != nil && len(p.VolumeReport.Conflicts) > 0 {
+			fmt.Fprintf(&b, "\nproject volume conflicts (creation would fail before changing anything):\n")
+			for _, c := range p.VolumeReport.Conflicts {
+				for _, line := range strings.Split(c.String(), "\n") {
+					fmt.Fprintf(&b, "  %s\n", line)
+				}
+			}
 		}
 	}
 	if len(tr.Options.Env) > 0 {
@@ -165,10 +188,28 @@ func (p Plan) Render() string {
 	return b.String()
 }
 
-// logicalName recovers the logical volume name from a backend volume name.
-func logicalName(backendName string) string {
-	_, logical, _ := strings.Cut(backendName, "-")
-	return logical
+// volumeStatus renders one declared Project volume's compatibility outcome
+// once the check has run: reuse, creation, or a conflict.
+func (p Plan) volumeStatus(pv volumes.Declared) string {
+	if p.VolumeReport == nil {
+		return ""
+	}
+	for _, c := range p.VolumeReport.Conflicts {
+		if c.Declared.Logical == pv.Logical {
+			return " — CONFLICT (see below)"
+		}
+	}
+	for _, name := range p.VolumeReport.Reused {
+		if name == pv.Logical {
+			return " (reuses the existing volume)"
+		}
+	}
+	for _, name := range p.VolumeReport.Fresh {
+		if name == pv.Logical {
+			return " (will be created)"
+		}
+	}
+	return ""
 }
 
 func describeNetwork(n config.NetworkConfig) string {

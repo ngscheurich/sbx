@@ -9,6 +9,8 @@ import (
 	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/identity"
+	"github.com/ngscheurich/sbx/internal/msb"
+	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
 // restrictedTOML is the restricted CLI fixture's configuration, copied from
@@ -152,6 +154,64 @@ func TestSandboxTranslatesRestrictedFixture(t *testing.T) {
 	}
 	if strings.Contains(tr.SecretConfYAML, "secret-value") {
 		t.Error("secret map contains a value")
+	}
+}
+
+// TestSandboxProjectVolumesCarryDefinitions checks that Project volumes
+// keep their full definitions — kind, size, quota — both in the named
+// mounts msb receives and in the declared list the compatibility check
+// compares against the backend's listing.
+func TestSandboxProjectVolumesCarryDefinitions(t *testing.T) {
+	root := t.TempDir()
+	cfg := load(t, `
+image = "alpine:3.20"
+cpus = 1
+memory = "1G"
+
+[volumes.data]
+target = "/data"
+scope = "project"
+kind = "disk"
+size = "8G"
+
+[volumes.capped]
+target = "/capped"
+scope = "project"
+quota = "4G"
+
+[network]
+egress = "public"
+`)
+	tr, err := Sandbox(info(root), cfg, "disposable")
+	if err != nil {
+		t.Fatalf("Sandbox: %v", err)
+	}
+	ns := identity.VolumeNamespace(filepath.Join(filepath.Dir(root), ".git"))
+
+	if len(tr.Options.Named) != 2 {
+		t.Fatalf("Named = %+v, want the 2 project volumes", tr.Options.Named)
+	}
+	wantMounts := []msb.NamedMount{
+		{Name: ns + "-capped", Target: "/capped", Kind: "dir", Quota: "4G"},
+		{Name: ns + "-data", Target: "/data", Kind: "disk", Size: "8G"},
+	}
+	for i, want := range wantMounts {
+		if tr.Options.Named[i] != want {
+			t.Errorf("Named[%d] = %+v, want %+v", i, tr.Options.Named[i], want)
+		}
+	}
+
+	if len(tr.ProjectVolumes) != 2 {
+		t.Fatalf("ProjectVolumes = %+v, want the 2 declared volumes", tr.ProjectVolumes)
+	}
+	wantDeclared := []volumes.Declared{
+		{Logical: "capped", Backend: ns + "-capped", Target: "/capped", Kind: "dir", Quota: "4G"},
+		{Logical: "data", Backend: ns + "-data", Target: "/data", Kind: "disk", Size: "8G"},
+	}
+	for i, want := range wantDeclared {
+		if tr.ProjectVolumes[i] != want {
+			t.Errorf("ProjectVolumes[%d] = %+v, want %+v", i, tr.ProjectVolumes[i], want)
+		}
 	}
 }
 

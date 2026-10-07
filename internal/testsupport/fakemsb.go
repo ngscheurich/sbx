@@ -29,12 +29,23 @@ import (
 //	FAKE_MSB_EXEC_FAIL_START    set to make "exec" exit 127 without running the guest
 //	FAKE_MSB_EXIT               exit status of "exec" (default 0)
 //	FAKE_MSB_RM_FAIL            set to make "remove" fail
+//	FAKE_MSB_VOLUMES_FAIL       set to make "volumes" fail
+//	FAKE_MSB_VOLUMES_MALFORMED  set to make "volumes" print non-JSON
 //
 // The fake is stateful: created sandboxes live as record files under
 // $FAKE_MSB_LOG/store/sbox-<name>, so ls, inspect, start, stop, and remove
 // observe what earlier calls created, the way a real backend would. Test
 // helpers in this package can seed records directly to simulate sandboxes
 // sbx did not create.
+//
+// Volumes live as record files under $FAKE_MSB_LOG/store/vol-<name>: named
+// volumes (--mount-named) persist until tests remove them, and owned
+// volumes (--mount-owned) belong to their sandbox — remove deletes a
+// sandbox's owned volumes with it, and msb run's one-shot owned volumes
+// disappear when the command completes, matching the real backend's
+// lifecycle. A named volume's definition comes from the mount options of
+// the first mount that created it, the way a real backend fixes a
+// volume's shape at creation.
 const fakeMsbSh = `#!/bin/sh
 dir="${FAKE_MSB_LOG:?}"
 store="$dir/store"
@@ -81,7 +92,86 @@ missing_sandbox() {
   exit 1
 }
 
-value_flags="--name --cpus --memory --mount-dir --mount-file --mount-named --mount-owned --env --net-rule --dns-nameserver --secret-conf --fs-conf --workdir"
+value_flags="--name --cpus --memory --mount-dir --mount-file --env --net-rule --dns-nameserver --secret-conf --fs-conf --workdir"
+
+vol_path() {
+  printf '%s/vol-%s' "$store" "$1"
+}
+
+size_to_bytes() {
+  # Converts msb's size format (512M) to bytes, binary units.
+  num=${1%[KMG]}
+  suf=${1#"$num"}
+  case "$suf" in
+  K) mult=1024 ;;
+  M) mult=1048576 ;;
+  G) mult=1073741824 ;;
+  *) mult=1 ;;
+  esac
+  printf '%s' $((num * mult))
+}
+
+parse_vol_opts() {
+  # Parses a mount spec's comma-separated options (kind=disk,size=2G)
+  # into the vkind, cap, and quo variables.
+  saved_ifs=$IFS
+  IFS=','
+  for kv in $1; do
+    case "$kv" in
+    kind=*) vkind=${kv#kind=} ;;
+    size=*) cap=$(size_to_bytes "${kv#size=}") ;;
+    quota=*) quo=$(($(size_to_bytes "${kv#quota=}") / 1048576)) ;;
+    esac
+  done
+  IFS=$saved_ifs
+}
+
+record_named() {
+  # Records a named volume from a NAME:DEST[:OPTIONS] spec, creating it
+  # only if it does not exist yet: remounting reuses the stored volume.
+  spec=$1
+  vname=${spec%%:*}
+  f=$(vol_path "$vname")
+  [ -f "$f" ] && return 0
+  vkind=dir
+  cap=null
+  quo=null
+  rest=${spec#*:}
+  case "$rest" in
+  *:*) parse_vol_opts "${rest#*:}" ;;
+  esac
+  {
+    echo "kind=$vkind"
+    echo "capacity_bytes=$cap"
+    echo "quota_mib=$quo"
+    echo "owner="
+  } > "$store/volnew.$$"
+  mv "$store/volnew.$$" "$f"
+}
+
+record_owned() {
+  # Records an owned volume from a DEST[:OPTIONS] spec for owner sandbox
+  # $2. The backend-generated name embeds the owner so removal can find
+  # the sandbox's volumes.
+  spec=$1
+  owner=$2
+  dest=${spec%%:*}
+  vid=$(printf '%s' "$dest" | tr '/.' '__')
+  f=$(vol_path "owned-$owner-$vid")
+  vkind=dir
+  cap=null
+  quo=null
+  case "$spec" in
+  *:*) parse_vol_opts "${spec#*:}" ;;
+  esac
+  {
+    echo "kind=$vkind"
+    echo "capacity_bytes=$cap"
+    echo "quota_mib=$quo"
+    echo "owner=$owner"
+  } > "$store/volnew.$$"
+  mv "$store/volnew.$$" "$f"
+}
 
 set_status() {
   f=$(record_path "$1")
@@ -116,10 +206,22 @@ create)
   name=""
   image=""
   labels=""
+  named_specs=""
+  owned_specs=""
   while [ $# -gt 0 ]; do
     case "$1" in
     --name)
       name="$2"
+      shift 2
+      ;;
+    --mount-named)
+      named_specs="$named_specs
+$2"
+      shift 2
+      ;;
+    --mount-owned)
+      owned_specs="$owned_specs
+$2"
       shift 2
       ;;
     --label)
@@ -174,6 +276,12 @@ $2"
     done
   } > "$store/create.$$"
   mv "$store/create.$$" "$f"
+  printf '%s\n' "$named_specs" | while IFS= read -r s; do
+    [ -n "$s" ] && record_named "$s"
+  done
+  printf '%s\n' "$owned_specs" | while IFS= read -r s; do
+    [ -n "$s" ] && record_owned "$s" "$name"
+  done
   ;;
 ls)
   out="["
@@ -226,9 +334,40 @@ remove)
   for a in "$@"; do
     case "$a" in
     --force) ;;
-    *) rm -f "$(record_path "$a")" ;;
+    *)
+      rm -f "$(record_path "$a")"
+      # A sandbox's owned volumes die with it; named volumes stay.
+      for v in "$store"/vol-owned-"$a"-*; do
+        [ -f "$v" ] && rm -f "$v"
+      done
+      ;;
     esac
   done
+  ;;
+volumes)
+  if [ -n "$FAKE_MSB_VOLUMES_FAIL" ]; then
+    echo "sbx-fake-msb: volume listing failed" >&2
+    exit 1
+  fi
+  if [ -n "$FAKE_MSB_VOLUMES_MALFORMED" ]; then
+    printf 'this is not json\n'
+    exit 0
+  fi
+  out="["
+  first=1
+  for f in "$store"/vol-*; do
+    [ -f "$f" ] || continue
+    vname=${f##*/vol-}
+    vkind=$(sed -n 's/^kind=//p' "$f")
+    cap=$(sed -n 's/^capacity_bytes=//p' "$f")
+    quo=$(sed -n 's/^quota_mib=//p' "$f")
+    if [ "$first" = 0 ]; then
+      out="$out,"
+    fi
+    out="$out{\"name\":\"$vname\",\"kind\":\"$vkind\",\"capacity_bytes\":$cap,\"quota_mib\":$quo}"
+    first=0
+  done
+  printf '%s]\n' "$out"
   ;;
 exec|run)
   prev=""
@@ -236,6 +375,8 @@ exec|run)
     case "$prev" in
     --secret-conf) [ -f "$a" ] && cp "$a" "$dir/secret-conf.$n" ;;
     --fs-conf) [ -f "$a" ] && cp "$a" "$dir/fs-conf.$n" ;;
+    --mount-named) record_named "$a" ;;
+    --mount-owned) record_owned "$a" "run-$n" ;;
     esac
     prev="$a"
   done
@@ -257,6 +398,9 @@ exec|run)
   fi
   printf 'guest-stdout\n'
   printf 'guest-stderr\n' >&2
+  # A disposable run's owned volumes are removed with it; named volumes
+  # persist.
+  rm -f "$store"/vol-owned-run-"$n"-*
   exit "${FAKE_MSB_EXIT:-0}"
   ;;
 remove)
@@ -416,6 +560,62 @@ func (l Log) SeedSandbox(t *testing.T, name, image, status string, labels map[st
 	if err := os.WriteFile(filepath.Join(store, "sbox-"+name), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// SeedVolume writes a fake-backend volume record directly, so a test can
+// simulate a pre-existing volume — one a sibling worktree's sandbox
+// created, or a conflicting one another branch's definition created. Nil
+// capacityBytes or quotaMiB render as JSON null in the volumes listing,
+// the shape real msb reports for plain directory volumes.
+func (l Log) SeedVolume(t *testing.T, name, kind string, capacityBytes, quotaMiB *int64) {
+	t.Helper()
+	store := filepath.Join(l.dir, "store")
+	if err := os.MkdirAll(store, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	field := func(v *int64) string {
+		if v == nil {
+			return "null"
+		}
+		return strconv.FormatInt(*v, 10)
+	}
+	content := fmt.Sprintf("kind=%s\ncapacity_bytes=%s\nquota_mib=%s\nowner=\n",
+		kind, field(capacityBytes), field(quotaMiB))
+	if err := os.WriteFile(filepath.Join(store, "vol-"+name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// VolumeNames returns the name of every volume record the fake backend
+// holds, sorted, including sandboxes' owned volumes.
+func (l Log) VolumeNames() []string {
+	entries, err := os.ReadDir(filepath.Join(l.dir, "store"))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "vol-") {
+			names = append(names, strings.TrimPrefix(e.Name(), "vol-"))
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// VolumeExists reports whether the fake backend holds the named volume.
+func (l Log) VolumeExists(t *testing.T, name string) bool {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(l.dir, "store", "vol-"+name))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("stat volume record %s: %v", name, err)
+	}
+	return err == nil
+}
+
+// Int64 returns a pointer to v, for seeding nullable volume fields.
+func Int64(v int64) *int64 {
+	return &v
 }
 
 // FixtureTOML reads a fixture sbx.toml and removes the named top-level
