@@ -59,7 +59,7 @@ func TestHelpListsOnlyV1Commands(t *testing.T) {
 		t.Fatalf("exit code = %d", code)
 	}
 	out := stdout.String()
-	for _, cmd := range []string{"plan", "build", "up", "exec", "run", "status", "logs", "stop", "rm", "port prune"} {
+	for _, cmd := range []string{"plan", "build", "up", "exec", "run", "status", "logs", "stop", "rm", "port"} {
 		if !strings.Contains(out, cmd) {
 			t.Errorf("help does not mention v1 command %q:\n%s", cmd, out)
 		}
@@ -78,6 +78,36 @@ func TestNoArgsShowsHelp(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Usage") {
 		t.Errorf("bare invocation did not show usage:\n%s", stdout.String())
+	}
+}
+
+// TestPortWithoutSubcommandShowsHelp checks that bare `sbx port` succeeds
+// by printing the port group's usage, keeping the top-level help's
+// "Manage sandbox ports" promise truthful.
+func TestPortWithoutSubcommandShowsHelp(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"port"}, nil, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"sbx port <subcommand>", "prune"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("port help does not mention %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestPortUnknownSubcommandFails checks that a bad port subcommand is a
+// usage error pointing at the group's own help.
+func TestPortUnknownSubcommandFails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"port", "list"}, nil, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	for _, want := range []string{"list", "sbx port"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr does not mention %q:\n%s", want, stderr.String())
+		}
 	}
 }
 

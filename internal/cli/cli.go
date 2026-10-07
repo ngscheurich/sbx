@@ -32,20 +32,27 @@ Usage:
   sbx <command> [flags]
 
 Commands:
-  plan    Show what sbx would create for this worktree's persistent sandbox, changing nothing
-  build   Build this project's image with Docker and import it into msb (requires [build])
-  run     Run a one-off guest command in a disposable sandbox, removed afterward
-  up      Create or start this worktree's persistent sandbox, bootstrapping new ones
-          (--allow-stale ignores drift; --retry-bootstrap retries an incomplete bootstrap)
-  exec    Run a guest command in the persistent sandbox (created or started first), leaving it running
-  status  Show the persistent sandbox's identity, state, and drift, changing nothing
-  logs    Show the persistent sandbox's msb logs
-  stop    Stop the persistent sandbox, keeping its state and volumes
-  rm      Remove the persistent sandbox after confirmation (--yes in noninteractive use)
-  port prune
-          Remove port reservations for sandboxes that no longer exist
+  plan    Show what sbx would create for this worktree’s sandbox
+  build   Build this project’s image and register it with the backend
+  run     Run a one-off guest command in a disposable sandbox
+  up      Create or start this worktree’s sandbox
+  exec    Run a guest command in the sandbox (creating/starting if needed)
+  status  Show the sandbox’s identity, state, and drift
+  logs    Show the sandbox’s logs
+  stop    Stop persistent sandbox, keeping its state and volumes
+  rm      Remove the sandbox (requires confirmation)
+  port    Manage sandbox ports
 
 Run sbx from any directory inside a Git worktree that has an sbx.toml.
+`
+
+const portHelpText = `sbx port — manage sandbox ports
+
+Usage:
+  sbx port <subcommand>
+
+Subcommands:
+  prune   Remove port reservations for sandboxes that no longer exist
 `
 
 // Run dispatches one command line and returns the process exit code. The
@@ -84,8 +91,12 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "rm":
 		return runRm(ctx, args, stdin, stdout, stderr)
 	case "port":
-		if len(args) < 2 || args[1] != "prune" {
-			fmt.Fprintf(stderr, "sbx: unknown command %q; the only port command is %q\n", strings.Join(args, " "), "port prune")
+		if len(args) < 2 {
+			fmt.Fprint(stdout, portHelpText)
+			return exitOK
+		}
+		if args[1] != "prune" {
+			fmt.Fprintf(stderr, "sbx: unknown port command %q; run \"sbx port\" for usage\n", args[1])
 			return exitUsage
 		}
 		return runPortPrune(ctx, args, stdout, stderr)
@@ -270,7 +281,7 @@ func checkProjectVolumes(ctx context.Context, box msb.CLI, declared []volumes.De
 	}
 	report, err := inspectProjectVolumes(ctx, box, declared)
 	if err != nil {
-		return fmt.Errorf("inspecting the backend's volumes before creation: %w", err)
+		return fmt.Errorf("inspecting the backend’s volumes before creation: %w", err)
 	}
 	if len(report.Conflicts) > 0 {
 		return fmt.Errorf("declared Project volume(s) conflict with existing backend volumes; nothing was created or changed:\n\n%s", volumes.FormatConflicts(report.Conflicts))
