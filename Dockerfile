@@ -5,10 +5,10 @@ ARG PI_VERSION=1.0.4
 
 ENV LANG=C.UTF-8
 
-# Install system dependencies
+# Install system packages
 RUN apt-get update && \
   apt-get install --yes --no-install-recommends \
-    curl ca-certificates git nodejs npm fd-find ripgrep && \
+    curl ca-certificates git nodejs npm fd-find ripgrep gcc libc6-dev && \
   rm -rf /var/lib/apt/lists/*
 
 # Install microsandbox
