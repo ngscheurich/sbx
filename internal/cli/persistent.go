@@ -5,13 +5,15 @@
 // recreates a drifted sandbox — that could destroy private data — and never
 // removes a Project volume or port reservation when removing a sandbox.
 //
-// Image checks and published ports belong to later tickets: declaring
-// them already fails closed in configuration parsing, and the creation
-// path re-checks nothing strict parsing has already refused. Declared
-// Project volumes are checked for compatibility with the backend's
-// existing volumes before any creation (ADR-0003). Bootstrap runs here:
-// once after each creation, recorded in host state only on success, and
-// retried only through `up --retry-bootstrap` (bootstrap.go).
+// Image checks gate both paths here: the creation path runs the declared
+// check against the image's contents before creating, and an existing
+// sandbox's own image is checked even with --allow-stale, failing closed
+// when its contents cannot be re-checked (ADR-0004, imagecheck.go).
+// Published ports belong to a later ticket. Declared Project volumes are
+// checked for compatibility with the backend's existing volumes before
+// any creation (ADR-0003). Bootstrap runs here: once after each creation,
+// recorded in host state only on success, and retried only through
+// `up --retry-bootstrap` (bootstrap.go).
 package cli
 
 import (
@@ -449,6 +451,11 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		if err != nil {
 			return "", bootstrapNotDeclared, err
 		}
+		// The declared image check gates the image before anything is
+		// created from it (ADR-0004).
+		if err := ensureImageChecked(ctx, box, p.cfg, p.info.WorktreeRoot, p.id.Sandbox, stdout, stderr); err != nil {
+			return "", bootstrapNotDeclared, err
+		}
 		cleanup, err := materializeGeneratedFiles(&p.tr)
 		if err != nil {
 			return "", bootstrapNotDeclared, err
@@ -501,6 +508,14 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\n\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(drift))
 		}
 		fmt.Fprintf(stderr, "warning: using %s despite drift:\n%s", p.id.Sandbox, renderDrift(drift))
+	}
+
+	// Even with --allow-stale, the sandbox's own image must have passed
+	// the declared image check for the current script (ADR-0004): an
+	// unmet or unverifiable check refuses use without touching the
+	// sandbox or its data.
+	if err := ensureSandboxImageChecked(ctx, box, p, s.EffectiveConfig().ManifestDigest, stdout, stderr); err != nil {
+		return "", bootstrapNotDeclared, err
 	}
 
 	var action string

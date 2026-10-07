@@ -376,8 +376,7 @@ func TestLoadRejectsEmptyBootstrap(t *testing.T) {
 
 func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	tests := map[string]string{
-		"ports":       "[ports.web]\nguest = 4000",
-		"image_check": "image_check = \"check.sh\"",
+		"ports": "[ports.web]\nguest = 4000",
 	}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -392,6 +391,25 @@ func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 				t.Errorf("error = %q, want it to name %q", err.Error(), name)
 			}
 		})
+	}
+}
+
+// TestLoadImageCheck checks that image_check parses as the project-owned
+// guest script's path, and that declaring it empty is rejected: an empty
+// declaration would silently mean "no check".
+func TestLoadImageCheck(t *testing.T) {
+	base := "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"image-check.sh\"\n\n[network]\negress = \"public\"\n"
+	cfg, err := Load(write(t, base))
+	if err != nil {
+		t.Fatalf("Load with image_check: %v", err)
+	}
+	if cfg.ImageCheck != "image-check.sh" {
+		t.Errorf("ImageCheck = %q, want %q", cfg.ImageCheck, "image-check.sh")
+	}
+
+	_, err = Load(write(t, "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"\"\n\n[network]\negress = \"public\"\n"))
+	if err == nil || !strings.Contains(err.Error(), "image_check") {
+		t.Errorf("empty image_check error = %v, want it to name image_check", err)
 	}
 }
 

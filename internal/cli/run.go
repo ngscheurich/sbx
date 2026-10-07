@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/translate"
 )
@@ -79,6 +80,15 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, stdout, 
 			return fatal(errImageNeedsBuild(cfg.Image))
 		}
 	} else if err := box.PullIfMissing(ctx, cfg.Image); err != nil {
+		return fatal(err)
+	}
+
+	// A declared image check gates the image: it runs in an isolated check
+	// sandbox unless a matching pass is recorded, and the image is confirmed
+	// unchanged before the run uses it (ADR-0004). The gate is a no-op when
+	// no image check is declared.
+	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
+	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, stdout, stderr); err != nil {
 		return fatal(err)
 	}
 

@@ -24,6 +24,9 @@ import (
 //	FAKE_MSB_IMAGE_MISSING     comma-separated images that "image inspect" fails for
 //	FAKE_MSB_IMAGE_DIGEST      manifest digest reported by "image inspect" and
 //	                            recorded for created sandboxes (default sha256:fake)
+//	FAKE_MSB_IMAGE_DIGEST_FROM  "n:sha256:..." — from the nth image inspect
+//	                            onward, report this digest instead (models a
+//	                            tag repointed mid-command)
 //	FAKE_MSB_PULL_FAIL         set to make "image pull" fail
 //	FAKE_MSB_CREATE_FAIL       substring that makes "create" fail when the name matches
 //	FAKE_MSB_LOAD_FAIL         set to make "load" fail
@@ -221,7 +224,20 @@ image)
     case ",$FAKE_MSB_IMAGE_MISSING," in
     *,$3,*) exit 1 ;;
     esac
-    printf '{"digest":"%s"}\n' "${FAKE_MSB_IMAGE_DIGEST:-sha256:fake}"
+    digest="${FAKE_MSB_IMAGE_DIGEST:-sha256:fake}"
+    # From the Nth image inspect onward, report an overridden digest:
+    # FAKE_MSB_IMAGE_DIGEST_FROM="n:sha256:..." models a tag repointed
+    # partway through a command's inspect sequence. The count spans the
+    # whole test, so it advances whether or not the override is set.
+    cnt=$(cat "$store/imginsp.n" 2>/dev/null || echo 0)
+    cnt=$((cnt+1))
+    echo "$cnt" > "$store/imginsp.n"
+    if [ -n "$FAKE_MSB_IMAGE_DIGEST_FROM" ]; then
+      n="${FAKE_MSB_IMAGE_DIGEST_FROM%%:*}"
+      d="${FAKE_MSB_IMAGE_DIGEST_FROM#*:}"
+      [ "$cnt" -ge "$n" ] && digest="$d"
+    fi
+    printf '{"digest":"%s"}\n' "$digest"
     ;;
   pull)
     if [ -n "$FAKE_MSB_PULL_FAIL" ]; then
@@ -419,12 +435,15 @@ volumes)
   ;;
 exec|run)
   prev=""
+  is_check=0
   for a in "$@"; do
     case "$prev" in
     --secret-conf) [ -f "$a" ] && cp "$a" "$dir/secret-conf.$n" ;;
     --fs-conf) [ -f "$a" ] && cp "$a" "$dir/fs-conf.$n" ;;
     --mount-named) record_named "$a" ;;
     --mount-owned) record_owned "$a" "run-$n" ;;
+    esac
+    case "$a" in *sbx-image-check*) is_check=1 ;;
     esac
     prev="$a"
   done
@@ -440,15 +459,20 @@ exec|run)
     exit 127
   fi
   if [ -n "$FAKE_MSB_EXEC_NO_STDIN_READ" ]; then
-    : > "$dir/stdin"
+    : > "$dir/stdin.$n"
   else
-    cat > "$dir/stdin"
+    cat > "$dir/stdin.$n"
   fi
   printf 'guest-stdout\n'
   printf 'guest-stderr\n' >&2
   # A disposable run's owned volumes are removed with it; named volumes
   # persist.
   rm -f "$store"/vol-owned-run-"$n"-*
+  # An image-check exec has its own exit status, so a test can fail the
+  # check without failing every other guest command.
+  if [ "$is_check" = 1 ]; then
+    exit "${FAKE_MSB_CHECK_EXIT:-${FAKE_MSB_EXIT:-0}}"
+  fi
   exit "${FAKE_MSB_EXIT:-0}"
   ;;
 remove)
@@ -561,12 +585,36 @@ func (l Log) Loaded(t *testing.T, index int) string {
 	return strings.TrimSpace(string(data))
 }
 
-// Stdin returns what the fake's exec handed to the guest on standard input.
+// Stdin returns what the most recent fake exec handed to the guest on
+// standard input.
 func (l Log) Stdin(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(l.dir, "stdin"))
+	n := -1
+	entries, err := os.ReadDir(l.dir)
 	if err != nil {
-		t.Fatalf("reading fake msb stdin capture: %v", err)
+		t.Fatalf("reading fake msb log for stdin captures: %v", err)
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "stdin.") {
+			continue
+		}
+		if i, err := strconv.Atoi(strings.TrimPrefix(e.Name(), "stdin.")); err == nil && i > n {
+			n = i
+		}
+	}
+	if n < 0 {
+		t.Fatalf("no fake msb stdin capture exists")
+	}
+	return l.StdinAt(t, n)
+}
+
+// StdinAt returns what the fake's exec at the given call index handed to
+// the guest on standard input.
+func (l Log) StdinAt(t *testing.T, index int) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(l.dir, "stdin."+strconv.Itoa(index)))
+	if err != nil {
+		t.Fatalf("reading fake msb stdin capture for call %d: %v", index, err)
 	}
 	return string(data)
 }
@@ -682,6 +730,17 @@ func (l Log) VolumeExists(t *testing.T, name string) bool {
 // Int64 returns a pointer to v, for seeding nullable volume fields.
 func Int64(v int64) *int64 {
 	return &v
+}
+
+// SandboxExists reports whether the fake backend holds the named sandbox
+// record — false once it has been removed.
+func (l Log) SandboxExists(t *testing.T, name string) bool {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(l.dir, "store", "sbox-"+name))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("stat sandbox record %s: %v", name, err)
+	}
+	return err == nil
 }
 
 // FixtureTOML reads a fixture sbx.toml and removes the named top-level

@@ -18,15 +18,14 @@ import (
 // supportedFields describes the configuration surface this build translates.
 // Later releases extend it; anything else must be rejected explicitly rather
 // than silently ignored.
-const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
-[volumes], [env], [secrets], [bootstrap], [network] (with allow and
-dns_nameservers), and [build]`
+const supportedFields = `image, cpus, memory, shell, image_check, [workspace],
+[mounts], [volumes], [env], [secrets], [bootstrap], [network] (with allow
+and dns_nameservers), and [build]`
 
 // notYetSupported are field names that the spec defines but this build does
 // not translate yet. Declaring any of them is an error, not a warning.
 var notYetSupported = map[string]struct{}{
-	"ports":       {},
-	"image_check": {},
+	"ports": {},
 }
 
 // Config is the validated content of one worktree's sbx.toml.
@@ -41,6 +40,10 @@ type Config struct {
 	Env       map[string]string       `toml:"env"`
 	Secrets   map[string]SecretConfig `toml:"secrets"`
 	Network   NetworkConfig           `toml:"network"`
+	// ImageCheck is the optional path of the project-owned guest script
+	// that gates image use: it runs in an isolated sandbox from the image
+	// alone before any sandbox uses the image (ADR-0004).
+	ImageCheck string `toml:"image_check"`
 	// Build is the optional [build] recipe; nil means the image is prebuilt
 	// and may be pulled, while a declared recipe means `sbx build` builds
 	// and imports it and nothing else may.
@@ -156,6 +159,9 @@ func Load(path string) (Config, error) {
 	}
 	if md.IsDefined("bootstrap") && strings.TrimSpace(cfg.Bootstrap.Run) == "" {
 		return Config{}, fmt.Errorf("sbx.toml: bootstrap.run is required when [bootstrap] is declared; it is the guest shell code run once in every new sandbox")
+	}
+	if md.IsDefined("image_check") && strings.TrimSpace(cfg.ImageCheck) == "" {
+		return Config{}, fmt.Errorf("sbx.toml: image_check is declared empty; name the project-owned guest script that gates image use, or remove the declaration")
 	}
 	cfg.applyDefaults()
 	if err := cfg.Validate(); err != nil {

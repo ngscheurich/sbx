@@ -98,8 +98,43 @@ func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
 	}
 	p := plan.Compose(info, cfg)
 	checkPlanVolumes(ctx, msb.CLI{}, &p)
+	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
+}
+
+// checkPlanImageCheck fills the plan's image-check status. It is
+// read-only: the image is inspected and host state is read, but nothing is
+// launched, recorded, or changed. An unresolvable status — a missing
+// script, an uninspectable image, a corrupt record — is reported, never
+// guessed.
+func checkPlanImageCheck(ctx context.Context, box msb.CLI, info gitx.Info, cfg config.Config, p *plan.Plan) {
+	if cfg.ImageCheck == "" {
+		return
+	}
+	report := &plan.ImageCheckReport{State: "unresolvable"}
+	p.ImageCheck = report
+	script, err := imageCheckScript(info.WorktreeRoot, cfg.ImageCheck)
+	if err != nil {
+		report.Reason = err.Error()
+		return
+	}
+	img, err := box.ImageInspect(ctx, cfg.Image)
+	if err != nil {
+		report.Reason = fmt.Sprintf("msb cannot inspect the image: %v", err)
+		return
+	}
+	report.Digest = img.ManifestDigest
+	ok, err := recordedPass(img.ManifestDigest, script)
+	if err != nil {
+		report.Reason = err.Error()
+		return
+	}
+	if ok {
+		report.State = "known"
+	} else {
+		report.State = "pending"
+	}
 }
 
 // checkPlanVolumes runs the Project volume compatibility check for the

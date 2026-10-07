@@ -27,6 +27,21 @@ context = "."
 dockerfile = "Dockerfile"
 `
 
+// buildCheckTOML is buildTOML with a declared image check.
+const buildCheckTOML = `
+image = "sbx-app:latest"
+cpus = 2
+memory = "2G"
+image_check = "image-check.sh"
+
+[network]
+egress = "public"
+
+[build]
+context = "."
+dockerfile = "Dockerfile"
+`
+
 // buildFixture prepares a fake msb and docker, a private host state
 // directory, a private TMPDIR the build archive lands in, and a worktree
 // holding the given sbx.toml plus a Dockerfile.
@@ -293,38 +308,74 @@ func TestBuildKeepArchive(t *testing.T) {
 	}
 }
 
-// TestBuildRejectsImageCheckBeforeAnything checks that a declared
-// image_check still fails configuration loading, before any tool runs: the
-// isolated image check arrives with a later ticket, and `sbx build` must
-// not silently skip it.
-func TestBuildRejectsImageCheckBeforeAnything(t *testing.T) {
-	worktree, msbLog, dockerLog := buildFixture(t, `
-image = "sbx-app:latest"
-cpus = 2
-memory = "2G"
-image_check = "image-check.sh"
+// TestBuildRunsImageCheckAfterImport checks that a build with a declared
+// image check runs it in an isolated sandbox after the import: a passing
+// check is recorded for the imported image's contents, and a failing
+// check fails the build — although the imported image stays cached.
+func TestBuildRunsImageCheckAfterImport(t *testing.T) {
+	t.Run("passing check is recorded", func(t *testing.T) {
+		worktree, msbLog, _ := buildFixture(t, buildCheckTOML)
+		writeImageCheckScript(t, worktree, checkScript)
 
-[network]
-egress = "public"
+		code, _, stderr := sbxBuild(t, worktree)
+		if code != 0 {
+			t.Fatalf("build failed: %s", stderr)
+		}
+		creates, execs, removes := checkSandboxCalls(msbLog)
+		if len(creates) != 1 || len(execs) != 1 || len(removes) != 1 {
+			t.Fatalf("check sandbox calls = %d/%d/%d, want one of each:\n", len(creates), len(execs), len(removes))
+		}
+		if !hasSuccess(t, checkScript) {
+			t.Errorf("no image-check success was recorded for the built image")
+		}
+	})
 
-[build]
-context = "."
-dockerfile = "Dockerfile"
-`)
+	t.Run("failing check fails the build", func(t *testing.T) {
+		worktree, msbLog, dockerLog := buildFixture(t, buildCheckTOML)
+		writeImageCheckScript(t, worktree, checkScript)
+		t.Setenv("FAKE_MSB_CHECK_EXIT", "37")
 
-	code, _, stderr := sbxBuild(t, worktree)
-	if code == 0 {
-		t.Fatal("build proceeded with an unsupported image_check")
-	}
-	if !strings.Contains(stderr, "image_check") {
-		t.Errorf("stderr does not name image_check:\n%s", stderr)
-	}
-	if got := dockerLog.Calls(); len(got) != 0 {
-		t.Errorf("docker ran before the image_check rejection: %v", got)
-	}
-	if got := msbLog.Calls(); len(got) != 0 {
-		t.Errorf("msb ran before the image_check rejection: %v", got)
-	}
+		code, _, stderr := sbxBuild(t, worktree)
+		if code == 0 {
+			t.Fatal("build succeeded although the image check failed")
+		}
+		if !strings.Contains(stderr, "image check") {
+			t.Errorf("stderr does not name the image check:\n%s", stderr)
+		}
+		// The image was still built, imported, and checked — and the
+		// imported image stays cached despite the failure.
+		if got := dockerLog.Calls(); len(got) != 2 {
+			t.Errorf("docker saw %d calls, want build and save", len(got))
+		}
+		if creates, execs, removes := checkSandboxCalls(msbLog); len(creates) != 1 || len(execs) != 1 || len(removes) != 1 {
+			t.Errorf("check sandbox calls = %d/%d/%d, want one of each", len(creates), len(execs), len(removes))
+		}
+		if hasSuccess(t, checkScript) {
+			t.Errorf("a failed check was recorded as a success")
+		}
+	})
+
+	t.Run("uninspectable image fails closed", func(t *testing.T) {
+		worktree, msbLog, dockerLog := buildFixture(t, buildCheckTOML)
+		writeImageCheckScript(t, worktree, checkScript)
+		// The import happened, but the gate cannot resolve the image's
+		// contents: an inspection failure is not a pass.
+		t.Setenv("FAKE_MSB_IMAGE_MISSING", "sbx-app:latest")
+
+		code, _, _ := sbxBuild(t, worktree)
+		if code == 0 {
+			t.Fatal("build succeeded although the image cannot be inspected for its check")
+		}
+		if got := dockerLog.Calls(); len(got) != 2 {
+			t.Errorf("docker saw %d calls, want build and save before the failed inspection", len(got))
+		}
+		if creates, _, _ := checkSandboxCalls(msbLog); len(creates) != 0 {
+			t.Errorf("a check sandbox was created although the image cannot be inspected")
+		}
+		if hasSuccess(t, checkScript) {
+			t.Errorf("an uninspectable image was recorded as a pass")
+		}
+	})
 }
 
 // TestBuildWritesNothingToTheRepository checks that building leaves the

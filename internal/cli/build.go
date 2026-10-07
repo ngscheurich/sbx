@@ -19,6 +19,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/config"
 	"github.com/ngscheurich/sbx/internal/docker"
 	"github.com/ngscheurich/sbx/internal/gitx"
+	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/translate"
 )
@@ -106,9 +107,14 @@ func runBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return fatal(err)
 	}
 
-	// Running the Image check after a successful import arrives with the
-	// isolated image-check ticket; image_check is still rejected in
-	// configuration, so there is nothing to run here yet.
+	// A declared image check gates the freshly imported image: it runs in
+	// an isolated sandbox from the image alone, and a failing check fails
+	// the build — although the imported image stays cached (ADR-0004).
+	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
+	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, stdout, stderr); err != nil {
+		return fatal(err)
+	}
+
 	fmt.Fprintf(stdout, "built %s for %s and imported it into msb's image store\n", cfg.Image, cfg.Build.Platform)
 	if keepArchive {
 		fmt.Fprintf(stdout, "image archive kept for debugging: %s\n", archivePath)

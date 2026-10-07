@@ -43,6 +43,25 @@ type Plan struct {
 	// uninspectable backend is reported, never read as an empty listing or
 	// as compatible definitions.
 	VolumeCheckErr error
+	// ImageCheck is the declared image check's read-only status, set by the
+	// caller after inspecting the backend and host state. Nil means the
+	// configuration declares no image check or the status was not
+	// evaluated; Compose itself performs no backend I/O.
+	ImageCheck *ImageCheckReport
+}
+
+// ImageCheckReport is the declared image check's status for one plan. The
+// known state means a pass is recorded for the image's current contents
+// and the current script; pending means the check will run in an isolated
+// sandbox before the image is used; unresolvable carries the reason the
+// status could not be determined.
+type ImageCheckReport struct {
+	// State is "known", "pending", or "unresolvable".
+	State string
+	// Digest is the manifest digest the status was evaluated against.
+	Digest string
+	// Reason explains an unresolvable status.
+	Reason string
 }
 
 // Compose derives the Plan from Git discovery and validated configuration.
@@ -171,6 +190,23 @@ func (p Plan) Render() string {
 		fmt.Fprintf(&b, "  bootstrap: runs once in each new sandbox, as `%s -c` in the workspace;\n", c.Shell)
 		fmt.Fprintf(&b, "    `sbx status` reports its completion against the live sandbox\n")
 	}
+	if c.ImageCheck != "" {
+		fmt.Fprintf(&b, "  image check: %s", c.ImageCheck)
+		if p.ImageCheck == nil {
+			fmt.Fprintf(&b, " (its status against the current image contents is checked before any creation)\n")
+		} else {
+			switch p.ImageCheck.State {
+			case "known":
+				fmt.Fprintf(&b, " — passed for the current image contents (%s) and this script;\n", p.ImageCheck.Digest)
+				fmt.Fprintf(&b, "    sbx will not run it again for these contents\n")
+			case "pending":
+				fmt.Fprintf(&b, " — no recorded pass for the current image contents (%s) yet;\n", p.ImageCheck.Digest)
+				fmt.Fprintf(&b, "    sbx will run it in an isolated sandbox from the image alone before the image is used\n")
+			default:
+				fmt.Fprintf(&b, " — its status cannot be determined: %s\n", p.ImageCheck.Reason)
+			}
+		}
+	}
 	if len(tr.SecretNames) > 0 {
 		fmt.Fprintf(&b, "  secrets (values never appear in this plan):\n")
 		for i, name := range tr.SecretNames {
@@ -187,8 +223,7 @@ func (p Plan) Render() string {
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
 	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift, Bootstrap completion against a live\n")
-	fmt.Fprintf(&b, "sandbox (see `sbx status`), image-check status, and tentative ports are\n")
-	fmt.Fprintf(&b, "added by later releases.\n")
+	fmt.Fprintf(&b, "sandbox (see `sbx status`), and tentative ports are added by later releases.\n")
 	fmt.Fprintf(&b, "sbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
 }
