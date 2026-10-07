@@ -96,7 +96,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return exitOK
 		}
 		if args[1] != "prune" {
-			fmt.Fprintf(stderr, "sbx: unknown port command %q; run \"sbx port\" for usage\n", args[1])
+			fmt.Fprintf(stderr, "sbx: unknown port command %q; run “sbx port” for usage\n", args[1])
 			return exitUsage
 		}
 		return runPortPrune(ctx, args, stdout, stderr)
