@@ -105,17 +105,12 @@ func runPlan(ctx context.Context, stdout, stderr io.Writer) int {
 	}
 	p := plan.Compose(info, cfg)
 	checkPlanVolumes(ctx, msb.CLI{}, &p)
-<<<<<<< HEAD
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-=======
 	checkPlanPorts(&p)
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	fmt.Fprint(stdout, p.Render())
 	return exitOK
 }
 
-<<<<<<< HEAD
 // checkPlanImageCheck fills the plan's image-check status. It is
 // read-only: the image is inspected and host state is read, but nothing is
 // launched, recorded, or changed. An unresolvable status — a missing
@@ -147,8 +142,9 @@ func checkPlanImageCheck(ctx context.Context, box msb.CLI, info gitx.Info, cfg c
 		report.State = "known"
 	} else {
 		report.State = "pending"
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-=======
+	}
+}
+
 // checkPlanPorts fills the Plan's ports report from a read-only registry
 // read. Planning never reserves or corrects: a port without a reservation
 // is reported as chosen at creation, and a failed registry read is
@@ -170,7 +166,6 @@ func checkPlanPorts(p *plan.Plan) {
 			}
 		}
 		p.Ports = append(p.Ports, ps)
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	}
 }
 

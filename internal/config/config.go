@@ -18,32 +18,13 @@ import (
 // supportedFields describes the configuration surface this build translates.
 // Later releases extend it; anything else must be rejected explicitly rather
 // than silently ignored.
-<<<<<<< HEAD
 const supportedFields = `image, cpus, memory, shell, image_check, [workspace],
-[mounts], [volumes], [env], [secrets], [bootstrap], [network] (with allow
-and dns_nameservers), and [build]`
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
-[volumes], [env], [secrets], [bootstrap], [network] (with allow and
-dns_nameservers), and [build]`
-=======
-const supportedFields = `image, cpus, memory, shell, [workspace], [mounts],
-[volumes], [ports], [env], [secrets], [bootstrap], [network] (with allow and
-dns_nameservers), and [build]`
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+[mounts], [volumes], [ports], [env], [secrets], [bootstrap], [network] (with
+allow and dns_nameservers), and [build]`
 
 // notYetSupported are field names that the spec defines but this build does
 // not translate yet. Declaring any of them is an error, not a warning.
-var notYetSupported = map[string]struct{}{
-<<<<<<< HEAD
-	"ports": {},
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-	"ports":       {},
-	"image_check": {},
-=======
-	"image_check": {},
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-}
+var notYetSupported = map[string]struct{}{}
 
 // Config is the validated content of one worktree's sbx.toml.
 type Config struct {

@@ -375,16 +375,9 @@ func TestLoadRejectsEmptyBootstrap(t *testing.T) {
 }
 
 func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
-	tests := map[string]string{
-<<<<<<< HEAD
-		"ports": "[ports.web]\nguest = 4000",
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-		"ports":       "[ports.web]\nguest = 4000",
-		"image_check": "image_check = \"check.sh\"",
-=======
-		"image_check": "image_check = \"check.sh\"",
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-	}
+	// Every spec field this build translates is supported, so the table is
+	// empty; the test stays as the harness for any future deferral.
+	tests := map[string]string{}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, err := Load(write(t, content+"\n"))
@@ -401,7 +394,6 @@ func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 // TestLoadImageCheck checks that image_check parses as the project-owned
 // guest script's path, and that declaring it empty is rejected: an empty
 // declaration would silently mean "no check".
@@ -418,8 +410,9 @@ func TestLoadImageCheck(t *testing.T) {
 	_, err = Load(write(t, "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"\"\n\n[network]\negress = \"public\"\n"))
 	if err == nil || !strings.Contains(err.Error(), "image_check") {
 		t.Errorf("empty image_check error = %v, want it to name image_check", err)
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-=======
+	}
+}
+
 func TestLoadPorts(t *testing.T) {
 	cfg, err := Load(write(t, minimal+`
 [ports.web]
@@ -474,7 +467,6 @@ guest = 4000
 				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErr)
 			}
 		})
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 	}
 }
 

@@ -5,34 +5,16 @@
 // recreates a drifted sandbox — that could destroy private data — and never
 // removes a Project volume or port reservation when removing a sandbox.
 //
-<<<<<<< HEAD
 // Image checks gate both paths here: the creation path runs the declared
 // check against the image's contents before creating, and an existing
 // sandbox's own image is checked even with --allow-stale, failing closed
 // when its contents cannot be re-checked (ADR-0004, imagecheck.go).
-// Published ports belong to a later ticket. Declared Project volumes are
-// checked for compatibility with the backend's existing volumes before
-// any creation (ADR-0003). Bootstrap runs here: once after each creation,
-// recorded in host state only on success, and retried only through
-// `up --retry-bootstrap` (bootstrap.go).
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-// Image checks and published ports belong to later tickets: declaring
-// them already fails closed in configuration parsing, and the creation
-// path re-checks nothing strict parsing has already refused. Declared
-// Project volumes are checked for compatibility with the backend's
-// existing volumes before any creation (ADR-0003). Bootstrap runs here:
-// once after each creation, recorded in host state only on success, and
-// retried only through `up --retry-bootstrap` (bootstrap.go).
-=======
 // Declared Project volumes are checked for compatibility with the
 // backend's existing volumes before any creation (ADR-0003), and declared
 // ports are reserved before creation and reconciled with the backend's
-// inspection report after it (ports.go). Image checks belong to a later
-// ticket: declaring one already fails closed in configuration parsing.
-// Bootstrap runs here: once after each creation, recorded in host state
-// only on success, and retried only through `up --retry-bootstrap`
-// (bootstrap.go).
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+// inspection report after it (ports.go). Bootstrap runs here: once after
+// each creation, recorded in host state only on success, and retried only
+// through `up --retry-bootstrap` (bootstrap.go).
 package cli
 
 import (

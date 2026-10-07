@@ -45,12 +45,18 @@ type Plan struct {
 	// uninspectable backend is reported, never read as an empty listing or
 	// as compatible definitions.
 	VolumeCheckErr error
-<<<<<<< HEAD
 	// ImageCheck is the declared image check's read-only status, set by the
 	// caller after inspecting the backend and host state. Nil means the
 	// configuration declares no image check or the status was not
 	// evaluated; Compose itself performs no backend I/O.
 	ImageCheck *ImageCheckReport
+	// Ports are the declared ports' reservation outlook, set by the caller
+	// from a read-only registry read. A nil slice with no error means no
+	// ports are declared.
+	Ports []PortStatus
+	// PortRegistryErr records a failed registry read. Read-only planning
+	// reports it without reserving or correcting anything.
+	PortRegistryErr error
 }
 
 // ImageCheckReport is the declared image check's status for one plan. The
@@ -65,15 +71,6 @@ type ImageCheckReport struct {
 	Digest string
 	// Reason explains an unresolvable status.
 	Reason string
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-=======
-	// Ports are the declared ports' reservation outlook, set by the caller
-	// from a read-only registry read. A nil slice with no error means no
-	// ports are declared.
-	Ports []PortStatus
-	// PortRegistryErr records a failed registry read. Read-only planning
-	// reports it without reserving or correcting anything.
-	PortRegistryErr error
 }
 
 // PortStatus is one declared port's reservation outlook: the reserved host
@@ -87,7 +84,6 @@ type PortStatus struct {
 	// Reserved is the host loopback port the registry holds for this
 	// sandbox and port name; zero means unreserved.
 	Reserved int
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 }
 
 // Compose derives the Plan from Git discovery and validated configuration.
@@ -263,16 +259,8 @@ func (p Plan) Render() string {
 	fmt.Fprintf(&b, "\nmsb arguments at creation:\n")
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
-	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift, Bootstrap completion against a live\n")
-<<<<<<< HEAD
-	fmt.Fprintf(&b, "sandbox (see `sbx status`), and tentative ports are added by later releases.\n")
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-	fmt.Fprintf(&b, "sandbox (see `sbx status`), image-check status, and tentative ports are\n")
-	fmt.Fprintf(&b, "added by later releases.\n")
-=======
-	fmt.Fprintf(&b, "sandbox (see `sbx status`), and image-check status are added by later\n")
-	fmt.Fprintf(&b, "releases.\n")
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
+	fmt.Fprintf(&b, "\nThis plan is partial: Creation drift and Bootstrap completion against a\n")
+	fmt.Fprintf(&b, "live sandbox (see `sbx status`) are added by later releases.\n")
 	fmt.Fprintf(&b, "sbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
 }

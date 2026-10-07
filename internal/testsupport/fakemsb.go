@@ -789,7 +789,6 @@ func Int64(v int64) *int64 {
 	return &v
 }
 
-<<<<<<< HEAD
 // SandboxExists reports whether the fake backend holds the named sandbox
 // record — false once it has been removed.
 func (l Log) SandboxExists(t *testing.T, name string) bool {
@@ -799,8 +798,8 @@ func (l Log) SandboxExists(t *testing.T, name string) bool {
 		t.Fatalf("stat sandbox record %s: %v", name, err)
 	}
 	return err == nil
-||||||| parent of 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
-=======
+}
+
 // FixtureWithoutLines reads a fixture sbx.toml and removes single lines
 // beginning with any of the given prefixes, for variants that gate on a
 // key-value field (such as image_check) rather than a table block.
@@ -824,7 +823,6 @@ func FixtureWithoutLines(t *testing.T, path string, prefixes ...string) string {
 		}
 	}
 	return strings.Join(out, "\n")
->>>>>>> 6de5dbd (feat: reserve stable loopback ports for persistent sandboxes)
 }
 
 // FixtureTOML reads a fixture sbx.toml and removes the named top-level
