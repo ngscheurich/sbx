@@ -2,13 +2,16 @@ module github.com/ngscheurich/sbx
 
 go 1.27.1
 
-require github.com/BurntSushi/toml v1.6.0
+require (
+	charm.land/lipgloss/v2 v2.0.6
+	github.com/BurntSushi/toml v1.6.0
+	github.com/charmbracelet/colorprofile v0.4.3
+	github.com/charmbracelet/x/ansi v0.11.8
+	golang.org/x/term v0.46.0
+)
 
 require (
-	charm.land/lipgloss/v2 v2.0.6 // indirect
-	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886 // indirect
-	github.com/charmbracelet/x/ansi v0.11.8 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
@@ -21,5 +24,4 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
 )
