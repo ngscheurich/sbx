@@ -284,7 +284,7 @@ const fixtureStatefulDir = "../../fixtures/stateful-web"
 // TestFixtureStatefulWebUpAndPorts copies the complete fixture into two
 // worktrees of one repository and checks `sbx up` across them: identity
 // reuse within a worktree, distinct identities and loopback ports across
-// worktrees, and each create's --publish carrying the reserved port.
+// worktrees, and each create's --port carrying the reserved port.
 //
 // The image_check line is stripped until ticket 10 lands: the fixture is
 // verbatim, and the variant derives from the fixture file so the two
@@ -364,13 +364,13 @@ func TestFixtureStatefulWebUpAndPorts(t *testing.T) {
 			continue
 		}
 		for i, a := range c.Args {
-			if a == "--publish" {
+			if a == "--port" {
 				published = append(published, c.Args[i+1])
 			}
 		}
 	}
 	if len(published) != 2 {
-		t.Fatalf("fake msb saw %d --publish flags across creates, want 2", len(published))
+		t.Fatalf("fake msb saw %d --port flags across creates, want 2", len(published))
 	}
 	for i, spec := range published {
 		if !strings.HasPrefix(spec, "127.0.0.1:") || !strings.HasSuffix(spec, ":4000") {

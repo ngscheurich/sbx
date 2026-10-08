@@ -73,7 +73,7 @@ func seedRegistry(t *testing.T, records ...state.PortReservation) {
 }
 
 // TestUpReservesAndPublishesPorts checks the creation path: the create argv
-// carries the --publish flags, the registry records the reservation, and
+// carries the --port flags, the registry records the reservation, and
 // the output reports the endpoint.
 func TestUpReservesAndPublishesPorts(t *testing.T) {
 	worktree, fake := persistentFixture(t, portsTOML)
@@ -100,7 +100,7 @@ func TestUpReservesAndPublishesPorts(t *testing.T) {
 		t.Fatalf("fake msb saw %d create calls", len(creates))
 	}
 	joined := strings.Join(creates[0].Args, " ")
-	if !strings.Contains(joined, "--publish 127.0.0.1:4001:4000") {
+	if !strings.Contains(joined, "--port 127.0.0.1:4001:4000") {
 		t.Errorf("create argv lacks the publish flag: %q", joined)
 	}
 
@@ -144,7 +144,7 @@ func TestPortsDistinctAcrossWorktrees(t *testing.T) {
 			continue
 		}
 		for i, a := range c.Args {
-			if a == "--publish" {
+			if a == "--port" {
 				published = append(published, c.Args[i+1])
 			}
 		}
@@ -352,7 +352,7 @@ func TestStatusReportsPortsReadOnly(t *testing.T) {
 }
 
 // TestDisposableRunPublishesNoPorts checks that a disposable run carries
-// no --publish even when the configuration declares ports.
+// no --port even when the configuration declares ports.
 func TestDisposableRunPublishesNoPorts(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -371,7 +371,7 @@ func TestDisposableRunPublishesNoPorts(t *testing.T) {
 			continue
 		}
 		for _, a := range c.Args {
-			if a == "--publish" {
+			if a == "--port" {
 				t.Errorf("disposable run published ports: %v", c.Args)
 			}
 		}

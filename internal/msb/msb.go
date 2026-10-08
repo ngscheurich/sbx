@@ -211,8 +211,8 @@ type Publish struct {
 // spec renders the publish specification msb create receives:
 // 127.0.0.1:<host>:<guest>. The spelling follows the loopback declarations
 // observed in real-host port probes (msb 0.7.3 accepted two sandboxes that
-// both declared 127.0.0.1:<port>); the flag name itself is UNVERIFIED on a
-// real host and is pinned here so a later probe can confirm or correct it.
+// both declared 127.0.0.1:<port>); the --port flag accepts the
+// BIND_ADDR:HOST:GUEST shape per its help text (msb 0.7.7).
 func (p Publish) spec() string {
 	return fmt.Sprintf("127.0.0.1:%d:%d", p.HostPort, p.GuestPort)
 }
@@ -291,13 +291,34 @@ func (c CLI) List(ctx context.Context) ([]ListEntry, error) {
 // the active configuration while the sandbox runs, and the recorded one
 // when it is stopped (observed on msb 0.7.3: active_config is null when
 // stopped, while config keeps the labels, image digest, and declared
-// ports). Ports keep their raw JSON — the report's exact shape is not yet
-// pinned by a real-host probe — and are read tolerantly by PublishedPorts
-// (ports.go), which fails closed on content it cannot parse.
+// ports). Ports live under network.ports — the shape probed on a real
+// msb 0.7.7 host — and keep their raw JSON for PublishedPorts (ports.go),
+// which fails closed on content it cannot parse.
 type SandboxConfig struct {
 	ManifestDigest string            `json:"manifest_digest"`
 	Labels         map[string]string `json:"labels"`
 	Ports          json.RawMessage   `json:"ports"`
+}
+
+// UnmarshalJSON reads one configuration layer, flattening where msb nests:
+// a sandbox's published ports are recorded under network.ports as
+// {guest_port, host_bind, host_port, protocol} objects (probed on a real
+// host). The layer keeps the raw JSON for the tolerant parser.
+func (c *SandboxConfig) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ManifestDigest string            `json:"manifest_digest"`
+		Labels         map[string]string `json:"labels"`
+		Network        struct {
+			Ports json.RawMessage `json:"ports"`
+		} `json:"network"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.ManifestDigest = raw.ManifestDigest
+	c.Labels = raw.Labels
+	c.Ports = raw.Network.Ports
+	return nil
 }
 
 // Sandbox is the `msb inspect --format json` report for one sandbox.
@@ -452,11 +473,13 @@ func (c CLI) Create(ctx context.Context, o CreateOptions) error {
 // auto-generated one-shot is removed when the command completes — so
 // disposable runs pass no name and let msb own both naming and lifecycle.
 //
-// Flag spellings come from `msb create --help` (msb 0.7.5): --mount-dir
-// SOURCE:DEST[:OPTIONS] and --mount-file SOURCE:DEST[:OPTIONS], --tmpfs
-// PATH:SIZE[:OPTIONS], --mount-named NAME:DEST, --mount-owned
-// DEST[:OPTIONS], -e KEY=value, --net-rule allow@<target>,
-// --tls-intercept, --secret-conf PATH.
+// Flag spellings come from `msb create --help` (msb 0.7.5, 0.7.7):
+// --mount-dir SOURCE:DEST[:OPTIONS] and --mount-file
+// SOURCE:DEST[:OPTIONS], --tmpfs PATH:SIZE[:OPTIONS], --mount-named
+// NAME:DEST, --mount-owned DEST[:OPTIONS], -e KEY=value,
+// --net-rule allow@<target>, --tls-intercept, --port
+// [BIND_ADDR:]HOST:GUEST (renamed from --publish in msb 0.7.7),
+// --secret-conf PATH.
 func CreateArgs(o CreateOptions) []string {
 	var args []string
 	if o.Name != "" {
@@ -527,7 +550,7 @@ func CreateArgs(o CreateOptions) []string {
 		args = append(args, "--no-net")
 	}
 	for _, p := range o.Publish {
-		args = append(args, "--publish", p.spec())
+		args = append(args, "--port", p.spec())
 	}
 	if o.SecretConf != "" {
 		args = append(args, "--secret-conf", o.SecretConf)

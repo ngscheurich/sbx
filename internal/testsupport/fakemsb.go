@@ -109,7 +109,7 @@ json_config() {
     esac
   done < "$1"
   ports=${ports%,}
-  printf '{"manifest_digest":"%s","labels":%s,"ports":[%s]}' "$digest" "$(json_labels "$1")" "$ports"
+  printf '{"manifest_digest":"%s","labels":%s,"network":{"ports":[%s]}}' "$digest" "$(json_labels "$1")" "$ports"
 }
 
 missing_sandbox() {
@@ -276,7 +276,7 @@ create)
       name="$2"
       shift 2
       ;;
-    --publish)
+    --port)
       published="$published
 $2"
       shift 2
@@ -343,7 +343,7 @@ $2"
     done
     # A second sandbox publishing an already-published port is accepted by
     # the real msb 0.7.3 (observed: the first guest kept serving HTTP), so
-    # the fake records every --publish without checking for collisions.
+    # the fake records every --port without checking for collisions.
     printf '%s\n' "$published" | while IFS= read -r p; do
       case "$p" in
       127.0.0.1:*) echo "published.${p%:*}=${p##*:}" ;;
