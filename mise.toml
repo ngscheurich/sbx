@@ -21,15 +21,15 @@ run = "rm $(which sbx)"
 description = "Run test suite"
 run = "go test ./..."
 
-[tasks.vet]
-description = "Check source code for suspicious constructs"
-run = "go vet ./..."
+[tasks.ci]
+description = "Run CI gates locally"
+depends = "test"
+run = ["go vet", "gofmt -l cmd internal", "go mod tidy -diff"]
 
 [tasks.format]
 description = "Format source code"
 run = "go fmt ./..."
 
-[tasks.ci]
-description = "Run CI gates locally"
-depends = ["test", "vet"]
-run = "gofmt -l cmd internal"
+[tasks.tidy]
+description = "Tidy module state"
+run = "go mod tidy"
