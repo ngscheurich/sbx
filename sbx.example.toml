@@ -1,0 +1,137 @@
+# sbx.toml — every available knob, with defaults and constraints.
+# Keys not listed here are rejected (strict parsing): typos never pass silently.
+
+# ── Top level ────────────────────────────────────────────────────────────────
+
+# Required. OCI image reference the sandbox runs from.
+image = "ghcr.io/example/project:latest"
+
+# Required. Positive number of CPU cores (finite).
+cpus = 2
+
+# Required. Memory limit: nonzero integer with a "K", "M", or "G" suffix.
+memory = "2G"
+
+# Optional. Guest shell used to run bootstrap and guest commands.
+# Default: "/bin/sh"
+shell = "/bin/bash"
+
+# Optional. Host path (relative to the worktree root, absolute, or "~/…")
+# of the project-owned guest script that gates image use. It runs in an
+# isolated check sandbox from the image alone — no Workspace, volumes,
+# secrets, or network policy — before any sandbox uses the image. An empty
+# declaration is an error; omit the key if you don't want a check.
+image_check = "scripts/image-check.sh"
+
+# ── [workspace] ──────────────────────────────────────────────────────────────
+# Optional. The worktree root is mounted read-write at the target, which is
+# also the guest working directory. Must be an absolute guest path and may
+# not contain "${". Default target: "/workspace". Default table:
+# [workspace]
+# target = "/workspace"
+
+# ── [[mounts]] ───────────────────────────────────────────────────────────────
+# A list of bind mounts (host path into the guest) and tmpfs mounts.
+# Targets must be absolute guest paths without "${", and must not collide
+# with each other, the workspace target, or any volume target.
+
+# Bind mount: source required; read_only optional (default false).
+[[mounts]]
+type = "bind"
+source = "~/.agents"          # host path: absolute, relative to worktree root, or "~/…"
+target = "/root/.agents"      # absolute guest mount point
+read_only = true              # optional; bind mounts only
+
+# Tmpfs mount: size required; no source, no read_only.
+[[mounts]]
+type = "tmpfs"
+target = "/tmp"
+size = "512M"                 # msb size format: integer + K/M/G
+noexec = false                # optional; tmpfs only (default false)
+
+# ── [volumes.<name>] ─────────────────────────────────────────────────────────
+# Persistent storage mounted into the sandbox. Names must match
+# [a-z][a-z0-9_]*. Scope is required: "sandbox" (private, removed with the
+# sandbox) or "project" (shared across the project's worktrees, retained).
+# Targets must be absolute guest paths without "${" and must not collide
+# with other mount points.
+
+# Directory volume (kind defaults to "dir"; takes no size).
+[volumes.shared_cache]
+target = "/opt/shared-cache"
+scope = "project"
+kind = "dir"                  # "dir" (default) or "disk"
+quota = "4G"                  # optional; only valid on a Project-scope dir volume
+
+# Disk volume: size required.
+[volumes.artifacts]
+target = "/vm/artifacts"
+scope = "sandbox"
+kind = "disk"
+size = "8G"
+
+# ── [ports.<name>] ───────────────────────────────────────────────────────────
+# Named TCP guest services a persistent sandbox publishes on a host loopback
+# port. The host port is never configured: sbx reserves one from 4001–4099
+# at creation, and the reservation survives sandbox removal until pruned.
+# Names must match [a-z][a-z0-9_]*; invalid with egress = "none".
+
+[ports.web]
+guest = 4000                  # TCP port the service listens on inside the sandbox (1–65535)
+
+# ── [env] ────────────────────────────────────────────────────────────────────
+# Static guest environment variables. Names must match
+# [A-Za-z_][A-Za-z0-9_]* and must not collide with [secrets] names.
+
+[env]
+SBX_DATA_DIR = "/var/lib/app"
+LOG_LEVEL = "debug"
+
+# ── [secrets.<name>] ─────────────────────────────────────────────────────────
+# Host environment values the guest sees only as placeholders; the backend
+# substitutes the real value only in requests to the allow destinations.
+# Names must match [A-Za-z_][A-Za-z0-9_]* and must not collide with [env].
+
+[secrets.GITHUB_TOKEN]
+from_env = "SBX_GITHUB_TOKEN" # required: host env var holding the value
+allow = [                     # required, non-empty: destinations the value may go to
+  "github.com",
+  "*.githubusercontent.com",  # entries: exact domain or "*."-prefixed suffix (≥ 2 labels)
+]
+
+# ── [network] ────────────────────────────────────────────────────────────────
+# Required. Egress policy: "public" (all traffic), "allowlist" (only
+# declared destinations), or "none" (no traffic at all).
+
+[network]
+egress = "allowlist"
+allow = [                     # required and non-empty iff egress = "allowlist"; invalid otherwise
+  "github.com",
+  "*.docker.io",
+  "registry.npmjs.org",
+]
+dns_nameservers = [           # optional; invalid with egress = "none". IP or IP:PORT.
+  "1.1.1.1",
+  "8.8.8.8:53",
+]
+
+# ── [build] ──────────────────────────────────────────────────────────────────
+# Optional Docker recipe. Declaring it means `sbx build` builds and imports
+# the image and nothing else may; omitting it means the image is prebuilt
+# and may be pulled.
+
+[build]
+context = "."                 # required: host dir Docker builds from (relative, absolute, or "~/…")
+dockerfile = "Dockerfile"     # optional; default <context>/Dockerfile
+target = "dev"                # optional: Dockerfile stage to build
+platform = "linux/amd64"      # optional; default linux/<host arch> (os/arch[/variant])
+
+# ── [bootstrap] ──────────────────────────────────────────────────────────────
+# Optional. Guest shell code run once in every new sandbox, through the
+# configured shell, in the Workspace. A declared run must be non-empty.
+# Editing it never causes Creation drift.
+
+[bootstrap]
+run = '''
+printf "bootstrapped\n" > "$SBX_DATA_DIR/bootstrapped"
+'''
