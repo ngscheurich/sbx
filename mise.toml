@@ -10,7 +10,7 @@ description = "Remove all build artifacts"
 run = "rm -f bin/*"
 
 [tasks.install]
-description = "Install local build"
+description = "Build and install for current platform"
 run = "go install ./cmd/sbx"
 
 [tasks.uninstall]
