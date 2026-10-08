@@ -29,17 +29,13 @@ import (
 func runBuild(ctx context.Context, args []string, out *output) int {
 	keep, err := parsePersistentFlags("build", args, []string{"--keep-archive"})
 	if err != nil {
-		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
-		return exitUsage
+		return out.usagef("%v", err)
 	}
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	fatal := func(err error) int {
-		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
-		return exitFailure
-	}
+	fatal := func(err error) int { return out.fail(err) }
 
 	info, cfg, err := discoverConfig(ctx)
 	if err != nil {

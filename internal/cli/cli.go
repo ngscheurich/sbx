@@ -29,10 +29,10 @@ const (
 
 // output carries the writers one command writes through. sbx's own lines
 // go to the styled writers — colorprofile-wrapped once here, so a pipe or
-// NO_COLOR receives Plain output (CONTEXT.md) no matter what a renderer
-// emits — while subprocess stdio passes through the raw writers
-// untouched, the way guest commands' output always has. styles is the
-// palette every sbx-authored surface renders with.
+// NO_COLOR receives Plain output no matter what a renderer emits — while
+// subprocess stdio passes through the raw writers untouched, the way
+// guest commands' output always has. styles is the palette every
+// sbx-authored surface renders with.
 type output struct {
 	stdout io.Writer // sbx-authored stdout lines
 	stderr io.Writer // sbx-authored stderr lines
@@ -54,34 +54,70 @@ func newOutput(stdout, stderr io.Writer) *output {
 	}
 }
 
-const helpText = `sbx — worktree-scoped local development sandboxes
+// fail writes one `sbx: …` error line — the prefix carries the severity
+// styling, the message text stays default — and returns the failure exit
+// code.
+func (o *output) fail(err error) int {
+	fmt.Fprintf(o.stderr, "%s %v\n", o.styles.Error.Render("sbx:"), err)
+	return exitFailure
+}
 
-Usage:
-  sbx <command> [flags]
+// usagef writes one `sbx: …` usage-error line and returns the usage exit
+// code.
+func (o *output) usagef(format string, args ...any) int {
+	fmt.Fprintf(o.stderr, "%s %s\n", o.styles.Error.Render("sbx:"), fmt.Sprintf(format, args...))
+	return exitUsage
+}
 
-Commands:
-  plan    Show what sbx would create for this worktree’s sandbox
-  build   Build this project’s image and register it with the backend
-  run     Run a one-off guest command in a disposable sandbox
-  up      Create or start this worktree’s sandbox
-  exec    Run a guest command in the sandbox (creating/starting if needed)
-  status  Show the sandbox’s identity, state, and drift
-  logs    Show the sandbox’s logs
-  stop    Stop persistent sandbox, keeping its state and volumes
-  rm      Remove the sandbox (requires confirmation)
-  port    Manage sandbox ports
+// helpCommands are the top-level commands help lists, in help order.
+var helpCommands = []struct{ name, summary string }{
+	{"plan", "Show what sbx would create for this worktree’s sandbox"},
+	{"build", "Build this project’s image and register it with the backend"},
+	{"run", "Run a one-off guest command in a disposable sandbox"},
+	{"up", "Create or start this worktree’s sandbox"},
+	{"exec", "Run a guest command in the sandbox (creating/starting if needed)"},
+	{"status", "Show the sandbox’s identity, state, and drift"},
+	{"logs", "Show the sandbox’s logs"},
+	{"stop", "Stop persistent sandbox, keeping its state and volumes"},
+	{"rm", "Remove the sandbox (requires confirmation)"},
+	{"port", "Manage sandbox ports"},
+}
 
-Run sbx from any directory inside a Git worktree that has an sbx.toml.
-`
+// renderHelp renders the top-level help: heading lines and command names
+// bold. Plain output — what a pipe or NO_COLOR receives — is byte-identical
+// to the pre-styling help text, pinned by testdata/help.txt.
+func renderHelp(st ui.Styles) string {
+	var b strings.Builder
+	fmt.Fprintln(&b, "sbx — worktree-scoped local development sandboxes")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Usage:"))
+	fmt.Fprintln(&b, "  sbx <command> [flags]")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Commands:"))
+	for _, c := range helpCommands {
+		// The name renders bold; its column padding stays outside the
+		// style so Plain output keeps today’s exact spacing.
+		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(c.name), strings.Repeat(" ", 6-len(c.name)), c.summary)
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Run sbx from any directory inside a Git worktree that has an sbx.toml.")
+	return b.String()
+}
 
-const portHelpText = `sbx port — manage sandbox ports
-
-Usage:
-  sbx port <subcommand>
-
-Subcommands:
-  prune   Remove port reservations for sandboxes that no longer exist
-`
+// renderPortHelp renders the port command group's help the same way.
+// Plain output is byte-identical to the pre-styling text, pinned by
+// testdata/port-help.txt.
+func renderPortHelp(st ui.Styles) string {
+	var b strings.Builder
+	fmt.Fprintln(&b, "sbx port — manage sandbox ports")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Usage:"))
+	fmt.Fprintln(&b, "  sbx port <subcommand>")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Subcommands:"))
+	fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render("prune"), " ", "Remove port reservations for sandboxes that no longer exist")
+	return b.String()
+}
 
 // Run dispatches one command line and returns the process exit code. The
 // context carries cancellation (sbx forwards it to the running guest) and
@@ -89,18 +125,17 @@ Subcommands:
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	out := newOutput(stdout, stderr)
 	if len(args) == 0 {
-		fmt.Fprint(out.stdout, helpText)
+		fmt.Fprint(out.stdout, renderHelp(out.styles))
 		return exitOK
 	}
 	cmd := args[0]
 	switch cmd {
 	case "-h", "--help", "help":
-		fmt.Fprint(out.stdout, helpText)
+		fmt.Fprint(out.stdout, renderHelp(out.styles))
 		return exitOK
 	case "plan":
 		if len(args) > 1 {
-			fmt.Fprintf(out.stderr, "sbx: plan takes no arguments or flags yet, got %q\n", strings.Join(args[1:], " "))
-			return exitUsage
+			return out.usagef("plan takes no arguments or flags yet, got %q", strings.Join(args[1:], " "))
 		}
 		return runPlan(ctx, out)
 	case "build":
@@ -121,19 +156,18 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runRm(ctx, args, stdin, out)
 	case "port":
 		if len(args) < 2 {
-			fmt.Fprint(out.stdout, portHelpText)
+			fmt.Fprint(out.stdout, renderPortHelp(out.styles))
 			return exitOK
 		}
 		if args[1] != "prune" {
-			fmt.Fprintf(out.stderr, "sbx: unknown port command %q; run “sbx port” for usage\n", args[1])
-			return exitUsage
+			return out.usagef("unknown port command %q; run “sbx port” for usage", args[1])
 		}
 		return runPortPrune(ctx, args, out)
 	case "-V", "--version", "version":
 		fmt.Fprintln(out.stdout, "sbx (development build)")
 		return exitOK
 	default:
-		fmt.Fprintf(out.stderr, "sbx: unknown command %q\n\n%s", cmd, helpText)
+		fmt.Fprintf(out.stderr, "%s unknown command %q\n\n%s", out.styles.Error.Render("sbx:"), cmd, renderHelp(out.styles))
 		return exitUsage
 	}
 }
@@ -141,15 +175,14 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 func runPlan(ctx context.Context, out *output) int {
 	info, cfg, err := discoverConfig(ctx)
 	if err != nil {
-		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
-		return exitFailure
+		return out.fail(err)
 	}
 	p := plan.Compose(info, cfg)
 	checkPlanVolumes(ctx, msb.CLI{}, &p)
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
 	checkPlanPorts(&p)
 	checkPlanLive(ctx, msb.CLI{}, info, cfg, &p)
-	fmt.Fprint(out.stdout, p.Render())
+	fmt.Fprint(out.stdout, p.Render(out.styles))
 	return exitOK
 }
 

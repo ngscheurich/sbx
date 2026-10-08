@@ -1,0 +1,11 @@
+persistent sandbox: <sandbox-id>
+status: Running
+created at: 2024-01-01T00:00:00Z
+created from image contents: sha256:seeded
+drift (up and exec refuse this; status does not):
+  - no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted
+
+ports:
+  - 127.0.0.1:8080 -> guest 80
+port registry discrepancies (a mutating command such as `sbx up` corrects these; status does not):
+  - the sandbox publishes 8080 for guest 80, but the registry holds no reservation for it

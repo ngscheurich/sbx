@@ -26,7 +26,7 @@ const plainLine = "sandbox: creation drift: none warning: the port registry coul
 
 // TestWritersStripAllDecorationFromABuffer pins the structural guarantee:
 // a writer that is not a terminal — a pipe or a buffer — receives Plain
-// output (CONTEXT.md): every escape stripped, words untouched.
+// output: every escape stripped, words untouched.
 func TestWritersStripAllDecorationFromABuffer(t *testing.T) {
 	var buf bytes.Buffer
 	out, _, st := Writers(&buf, io.Discard)

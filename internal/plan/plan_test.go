@@ -1,7 +1,10 @@
 package plan
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +14,20 @@ import (
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
+	"github.com/ngscheurich/sbx/internal/ui"
 	"github.com/ngscheurich/sbx/internal/volumes"
 )
+
+// renderPlain renders the plan the way every consumer receives it: one
+// rendering path, styled, written through the ui writers, so the bytes
+// degrade to Plain output before any comparison.
+func renderPlain(t *testing.T, p Plan) string {
+	t.Helper()
+	var buf bytes.Buffer
+	out, _, styles := ui.Writers(&buf, io.Discard)
+	fmt.Fprint(out, p.Render(styles))
+	return buf.String()
+}
 
 // writeConfig writes a configuration to a temporary file and returns its
 // path.
@@ -52,7 +67,7 @@ func TestComposeUsesOnlyGitPaths(t *testing.T) {
 }
 
 func TestRenderShowsIdentityAndConfiguration(t *testing.T) {
-	rendered := testPlan(t).Render()
+	rendered := renderPlain(t, testPlan(t))
 	for _, want := range []string{
 		"app-wt1-",
 		"/src/app/wt1",
@@ -71,15 +86,15 @@ func TestRenderShowsIdentityAndConfiguration(t *testing.T) {
 
 func TestRenderMentionsVolumeNaming(t *testing.T) {
 	ns := testPlan(t).VolumeNamespace
-	rendered := testPlan(t).Render()
+	rendered := renderPlain(t, testPlan(t))
 	if !strings.Contains(rendered, ns) {
 		t.Errorf("rendered plan does not show the volume namespace %q:\n%s", ns, rendered)
 	}
 }
 
 func TestRenderIsDeterministic(t *testing.T) {
-	a := testPlan(t).Render()
-	b := testPlan(t).Render()
+	a := renderPlain(t, testPlan(t))
+	b := renderPlain(t, testPlan(t))
 	if a != b {
 		t.Error("Render is not deterministic")
 	}
@@ -90,14 +105,14 @@ func TestRenderNoHostEnvironmentValues(t *testing.T) {
 	// value in the environment must not leak into the rendered plan even if
 	// a host variable happened to share a name's spelling.
 	t.Setenv("SBX_PLAN_TOKEN", "throwaway-plan-value-41f9")
-	rendered := testPlan(t).Render()
+	rendered := renderPlain(t, testPlan(t))
 	if strings.Contains(rendered, "throwaway-plan-value") {
 		t.Errorf("rendered plan contains a host environment value:\n%s", rendered)
 	}
 }
 
 func TestRenderShowsTranslation(t *testing.T) {
-	rendered := testPlan(t).Render()
+	rendered := renderPlain(t, testPlan(t))
 	for _, want := range []string{
 		"tmpfs /tmp (512M)",
 		"project volume " + testPlan(t).VolumeNamespace + "-cache at /var/cache",
@@ -118,7 +133,7 @@ func TestRenderShowsTranslation(t *testing.T) {
 
 func TestRenderShowsSandboxNameInCreateArgs(t *testing.T) {
 	p := testPlan(t)
-	rendered := p.Render()
+	rendered := renderPlain(t, p)
 	if !strings.Contains(rendered, "--name "+p.Sandbox) {
 		t.Errorf("rendered msb create arguments lack --name <sandbox identity>:\n%s", rendered)
 	}
@@ -138,7 +153,7 @@ egress = "public"
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	rendered := Compose(info, cfg).Render()
+	rendered := renderPlain(t, Compose(info, cfg))
 	if strings.Contains(rendered, "--secret-conf") {
 		t.Errorf("secretless plan renders --secret-conf, which msb create would never receive:\n%s", rendered)
 	}
@@ -152,7 +167,7 @@ egress = "public"
 // that the check happens before any creation rather than claiming an
 // outcome.
 func TestRenderNotesProjectVolumeCheck(t *testing.T) {
-	rendered := testPlan(t).Render()
+	rendered := renderPlain(t, testPlan(t))
 	if !strings.Contains(rendered, "compatibility with existing volumes is checked before any creation") {
 		t.Errorf("plan with project volumes does not note the pre-creation check:\n%s", rendered)
 	}
@@ -166,13 +181,13 @@ func TestRenderNotesProjectVolumeCheck(t *testing.T) {
 func TestRenderReportsVolumeReuseAndCreation(t *testing.T) {
 	p := testPlan(t)
 	p.VolumeReport = &volumes.Report{Reused: []string{"cache"}}
-	rendered := p.Render()
+	rendered := renderPlain(t, p)
 	if !strings.Contains(rendered, "project volume "+p.VolumeNamespace+"-cache at /var/cache (reuses the existing volume)") {
 		t.Errorf("rendered plan does not report the reuse:\n%s", rendered)
 	}
 
 	p.VolumeReport = &volumes.Report{Fresh: []string{"cache"}}
-	rendered = p.Render()
+	rendered = renderPlain(t, p)
 	if !strings.Contains(rendered, "(will be created)") {
 		t.Errorf("rendered plan does not report the creation:\n%s", rendered)
 	}
@@ -189,7 +204,7 @@ func TestRenderReportsVolumeConflicts(t *testing.T) {
 		Existing:   msb.VolumeInfo{Name: declared.Backend, Kind: "disk", CapacityBytes: int64Ptr(8589934592)},
 		Mismatches: []string{`kind: declared "dir", existing "disk"`},
 	}}}
-	rendered := p.Render()
+	rendered := renderPlain(t, p)
 	for _, want := range []string{
 		"project volume conflicts",
 		"CONFLICT",
@@ -212,7 +227,7 @@ func TestRenderReportsVolumeConflicts(t *testing.T) {
 func TestRenderReportsVolumeCheckFailure(t *testing.T) {
 	p := testPlan(t)
 	p.VolumeCheckErr = errors.New("listing the backend's volumes: msb exploded")
-	rendered := p.Render()
+	rendered := renderPlain(t, p)
 	if !strings.Contains(rendered, "compatibility could not be checked: listing the backend's volumes: msb exploded") {
 		t.Errorf("rendered plan does not report the failed check:\n%s", rendered)
 	}
@@ -224,7 +239,7 @@ func TestRenderReportsVolumeCheckFailure(t *testing.T) {
 func int64Ptr(v int64) *int64 { return &v }
 
 func TestRenderNeverContainsSecretValues(t *testing.T) {
-	rendered := testPlan(t).Render()
+	rendered := renderPlain(t, testPlan(t))
 	// The plan knows names and host variables, never values. The value is
 	// not set in the test process at all; guard against future regressions
 	// by checking the placeholder form is what appears.
@@ -256,8 +271,8 @@ egress = "public"
 	if p.TranslateErr == nil {
 		t.Fatal("Compose succeeded with a missing bind source")
 	}
-	if !strings.Contains(p.Render(), "absent.txt") {
-		t.Errorf("rendered plan does not name the missing source:\n%s", p.Render())
+	if !strings.Contains(renderPlain(t, p), "absent.txt") {
+		t.Errorf("rendered plan does not name the missing source:\n%s", renderPlain(t, p))
 	}
 }
 
@@ -284,7 +299,7 @@ egress = "public"
 		t.Fatalf("Load: %v", err)
 	}
 	p := Compose(gitx.Info{WorktreeRoot: root, CommonDir: filepath.Join(filepath.Dir(root), ".git")}, cfg)
-	rendered := p.Render()
+	rendered := renderPlain(t, p)
 	if !strings.Contains(rendered, "bind "+filepath.Join(root, "notes.txt")+" -> /mnt/notes.txt (read-only)") {
 		t.Errorf("rendered plan does not show the resolved bind:\n%s", rendered)
 	}

@@ -1,0 +1,36 @@
+sbx plan — preview of the persistent sandbox for this worktree
+
+project:          app
+worktree root:    /src/app/wt1
+common git dir:   /src/app/.git
+sandbox identity: app-wt1-cd4c9147
+volume namespace: 53ee4efe (project volumes are named 53ee4efe-<logical name>)
+
+configuration (sbx.toml):
+  image:   alpine:3.20
+  cpus:    2
+  memory:  2G
+  shell:   /bin/sh
+
+sandbox:
+  workspace: /workspace (the worktree root, read-write, also the working directory)
+  mounts:
+    - tmpfs /tmp (512M)
+  volumes:
+    - cache: project volume 53ee4efe-cache at /var/cache
+    (compatibility with existing volumes is checked before any creation)
+  environment:
+    - MODE=test
+  network: egress allowlist, deny by default, TLS interception on, dns 1.1.1.1
+  secrets (values never appear in this plan):
+    - TOKEN: host variable SBX_PLAN_TOKEN, sent only to example.com
+  secret map passed as --secret-conf:
+    TOKEN:
+      value: "${SBX_PLAN_TOKEN}"
+      allow: [example.com]
+
+msb arguments at creation:
+  msb create --name app-wt1-cd4c9147 alpine:3.20 --cpus 2 --memory 2G --mount-dir /src/app/wt1:/workspace --mount-named 53ee4efe-cache:/var/cache --env MODE=test --label sbx.managed=1 --label sbx.mode=persistent --label sbx.worktree=/src/app/wt1 --net-rule allow@example.com --tls-intercept --dns-nameserver 1.1.1.1 --secret-conf "<secret map generated at creation>" --fs-conf "<filesystem configuration generated at creation>"
+
+sbx changed nothing: no sandbox was created and no host or project
+state was written.

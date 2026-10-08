@@ -34,18 +34,14 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, out *out
 	case args[1] == "--":
 		argv = args[2:]
 	default:
-		fmt.Fprintf(out.stderr, "sbx: run takes an optional %q separator before the guest command, got %q\n", "--", strings.Join(args[1:], " "))
-		return exitUsage
+		return out.usagef("run takes an optional %q separator before the guest command, got %q", "--", strings.Join(args[1:], " "))
 	}
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	box := msb.CLI{}
-	fatal := func(err error) int {
-		fmt.Fprintf(out.stderr, "sbx: %v\n", err)
-		return exitFailure
-	}
+	fatal := func(err error) int { return out.fail(err) }
 
 	info, cfg, err := discoverConfig(ctx)
 	if err != nil {

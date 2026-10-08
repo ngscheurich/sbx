@@ -8,8 +8,8 @@
 // The styles themselves are profile-independent: renderers always emit
 // their decoration, and the writer-bound colorprofile degrades it before
 // output. A pipe or NO_COLOR therefore cannot receive ANSI no matter what
-// a renderer emits, which keeps Plain output (CONTEXT.md) byte-identical
-// by construction rather than by testing.
+// a renderer emits, which keeps Plain output byte-identical by
+// construction rather than by testing.
 package ui
 
 import (
@@ -21,10 +21,9 @@ import (
 )
 
 // Styles is the palette every sbx-authored surface renders through: color
-// and bold only, from the named 16-color ANSI palette, with color as
-// decoration on words that already carry the meaning
-// (docs/style/accessibility.md). A zero Styles renders nothing; use
-// NewStyles.
+// and bold only, from the named 16-color ANSI palette, and never the only
+// carrier of a meaning the words do not already state. A zero Styles
+// renders nothing; use NewStyles.
 type Styles struct {
 	// Error styles the `sbx:` prefix of error lines: ANSI color 1, bold.
 	// The message text after it stays default.

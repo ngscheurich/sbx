@@ -12,6 +12,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/ports"
 	"github.com/ngscheurich/sbx/internal/translate"
+	"github.com/ngscheurich/sbx/internal/ui"
 	"github.com/ngscheurich/sbx/internal/volumes"
 )
 
@@ -168,11 +169,15 @@ const (
 	fsConfPlaceholder     = "<filesystem configuration generated at creation>"
 )
 
-// Render formats the Plan as human-readable text. The output is
-// deterministic and contains no secret values.
-func (p Plan) Render() string {
+// Render formats the Plan as human-readable text, decorated with the
+// given styles: the header and section headings bold, positive states and
+// warnings colored. There is one rendering path — Plain output is these
+// same bytes through an Ascii-profile writer (ui.Writers), which strips
+// the decoration. The output is deterministic and contains no secret
+// values.
+func (p Plan) Render(st ui.Styles) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "sbx plan — preview of the persistent sandbox for this worktree\n\n")
+	fmt.Fprintf(&b, "%s\n\n", st.Heading.Render("sbx plan — preview of the persistent sandbox for this worktree"))
 	fmt.Fprintf(&b, "project:          %s\n", p.Project)
 	fmt.Fprintf(&b, "worktree root:    %s\n", p.WorktreeRoot)
 	fmt.Fprintf(&b, "common git dir:   %s\n", p.CommonDir)
@@ -180,20 +185,20 @@ func (p Plan) Render() string {
 	fmt.Fprintf(&b, "volume namespace: %s (project volumes are named %s-<logical name>)\n", p.VolumeNamespace, p.VolumeNamespace)
 
 	if p.TranslateErr != nil {
-		fmt.Fprintf(&b, "\ntranslation failed, so the sandbox cannot be planned:\n  %v\n", p.TranslateErr)
+		fmt.Fprintf(&b, "\n%s\n  %v\n", st.Warning.Render("translation failed, so the sandbox cannot be planned:"), p.TranslateErr)
 		fmt.Fprintf(&b, "\nsbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 		return b.String()
 	}
 
 	c := p.Config
-	fmt.Fprintf(&b, "\nconfiguration (sbx.toml):\n")
+	fmt.Fprintf(&b, "\n%s\n", st.Heading.Render("configuration (sbx.toml):"))
 	fmt.Fprintf(&b, "  image:   %s\n", c.Image)
 	fmt.Fprintf(&b, "  cpus:    %s\n", msb.FormatCPUs(c.CPUs))
 	fmt.Fprintf(&b, "  memory:  %s\n", c.Memory)
 	fmt.Fprintf(&b, "  shell:   %s\n", c.Shell)
 
 	tr := p.Translation
-	fmt.Fprintf(&b, "\nsandbox:\n")
+	fmt.Fprintf(&b, "\n%s\n", st.Heading.Render("sandbox:"))
 	fmt.Fprintf(&b, "  workspace: %s (the worktree root, read-write, also the working directory)\n", tr.Workspace)
 	if len(tr.Options.Mounts) > 1 || len(tr.Tmpfs) > 0 {
 		fmt.Fprintf(&b, "  mounts:\n")
@@ -215,12 +220,12 @@ func (p Plan) Render() string {
 	if len(tr.ProjectVolumes) > 0 || len(tr.Options.Owned) > 0 {
 		fmt.Fprintf(&b, "  volumes:\n")
 		for _, pv := range tr.ProjectVolumes {
-			fmt.Fprintf(&b, "    - %s: project volume %s at %s%s\n", pv.Logical, pv.Backend, pv.Target, p.volumeStatus(pv))
+			fmt.Fprintf(&b, "    - %s: project volume %s at %s%s\n", pv.Logical, pv.Backend, pv.Target, p.volumeStatus(pv, st))
 		}
 		if len(tr.ProjectVolumes) > 0 {
 			switch {
 			case p.VolumeCheckErr != nil:
-				fmt.Fprintf(&b, "    (compatibility could not be checked: %v;\n", p.VolumeCheckErr)
+				fmt.Fprintf(&b, "    (%s: %v;\n", st.Warning.Render("compatibility could not be checked"), p.VolumeCheckErr)
 				fmt.Fprintf(&b, "     an uninspectable backend is never treated as an empty or compatible one)\n")
 			case p.VolumeReport == nil:
 				fmt.Fprintf(&b, "    (compatibility with existing volumes is checked before any creation)\n")
@@ -234,7 +239,7 @@ func (p Plan) Render() string {
 			fmt.Fprintf(&b, "    - %s: sandbox %s\n", om.Target, kind)
 		}
 		if p.VolumeReport != nil && len(p.VolumeReport.Conflicts) > 0 {
-			fmt.Fprintf(&b, "\nproject volume conflicts (creation would fail before changing anything):\n")
+			fmt.Fprintf(&b, "\n%s\n", st.Warning.Render("project volume conflicts (creation would fail before changing anything):"))
 			for _, c := range p.VolumeReport.Conflicts {
 				for _, line := range strings.Split(c.String(), "\n") {
 					fmt.Fprintf(&b, "  %s\n", line)
@@ -252,13 +257,13 @@ func (p Plan) Render() string {
 	switch {
 	case len(tr.Ports) == 0:
 	case p.PortRegistryErr != nil:
-		fmt.Fprintf(&b, "  ports: %d declared, but the port registry could not be read (%v);\n", len(tr.Ports), p.PortRegistryErr)
+		fmt.Fprintf(&b, "  %s\n", st.Warning.Render(fmt.Sprintf("ports: %d declared, but the port registry could not be read (%v);", len(tr.Ports), p.PortRegistryErr)))
 		fmt.Fprintf(&b, "    planning reports without reserving or correcting\n")
 	default:
 		fmt.Fprintf(&b, "  ports:\n")
 		for _, ps := range p.Ports {
 			if ps.Reserved != 0 {
-				fmt.Fprintf(&b, "    - %s: guest %d -> 127.0.0.1:%d (reserved)\n", ps.Name, ps.Guest, ps.Reserved)
+				fmt.Fprintf(&b, "    - %s: guest %d -> 127.0.0.1:%d %s\n", ps.Name, ps.Guest, ps.Reserved, st.Positive.Render("(reserved)"))
 			} else {
 				fmt.Fprintf(&b, "    - %s: guest %d -> host port chosen at creation (from %d-%d)\n", ps.Name, ps.Guest, ports.FirstPort, ports.LastPort)
 			}
@@ -297,10 +302,10 @@ func (p Plan) Render() string {
 		}
 	}
 
-	fmt.Fprintf(&b, "\nmsb arguments at creation:\n")
+	fmt.Fprintf(&b, "\n%s\n", st.Heading.Render("msb arguments at creation:"))
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
-	p.renderLive(&b)
+	p.renderLive(&b, st)
 
 	fmt.Fprintf(&b, "\nsbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
@@ -311,17 +316,17 @@ func (p Plan) Render() string {
 // state, and port discrepancies are reported here exactly as status
 // reports them, never enforced or corrected, so the plan stays usable
 // when the sandbox has drifted.
-func (p Plan) renderLive(b *strings.Builder) {
+func (p Plan) renderLive(b *strings.Builder, st ui.Styles) {
 	if p.Live == nil {
 		return
 	}
-	fmt.Fprintf(b, "\nexisting sandbox:\n")
+	fmt.Fprintf(b, "\n%s\n", st.Heading.Render("existing sandbox:"))
 	if p.Live.ListErr != nil {
-		fmt.Fprintf(b, "  state: unknown (the backend’s listing failed: %v)\n", p.Live.ListErr)
+		fmt.Fprintf(b, "  %s\n", st.Warning.Render(fmt.Sprintf("state: unknown (the backend’s listing failed: %v)", p.Live.ListErr)))
 		return
 	}
 	if p.Live.InspectErr != nil {
-		fmt.Fprintf(b, "  state: unknown (the sandbox could not be inspected: %v)\n", p.Live.InspectErr)
+		fmt.Fprintf(b, "  %s\n", st.Warning.Render(fmt.Sprintf("state: unknown (the sandbox could not be inspected: %v)", p.Live.InspectErr)))
 		return
 	}
 	if !p.Live.Owned {
@@ -331,11 +336,11 @@ func (p Plan) renderLive(b *strings.Builder) {
 	fmt.Fprintf(b, "  state: %s\n", p.Live.Status)
 	switch {
 	case p.Live.DriftErr != nil:
-		fmt.Fprintf(b, "  creation drift: unknown (%v)\n", p.Live.DriftErr)
+		fmt.Fprintf(b, "  %s\n", st.Warning.Render(fmt.Sprintf("creation drift: unknown (%v)", p.Live.DriftErr)))
 	case len(p.Live.Drift) == 0:
-		fmt.Fprintf(b, "  creation drift: none\n")
+		fmt.Fprintf(b, "  %s\n", st.Positive.Render("creation drift: none"))
 	default:
-		fmt.Fprintf(b, "  creation drift (up and exec refuse this; the plan does not):\n")
+		fmt.Fprintf(b, "  %s\n", st.Heading.Render("creation drift (up and exec refuse this; the plan does not):"))
 		for _, d := range p.Live.Drift {
 			fmt.Fprintf(b, "    - %s\n", d)
 		}
@@ -350,10 +355,10 @@ func (p Plan) renderLive(b *strings.Builder) {
 		fmt.Fprintf(b, "  bootstrap: incomplete — it never completed for this sandbox; plain `sbx up` will not retry it (use `sbx up --retry-bootstrap`, or repair with `sbx exec`)\n")
 	}
 	if p.Live.BootstrapErr != nil {
-		fmt.Fprintf(b, "  bootstrap: unknown (%v)\n", p.Live.BootstrapErr)
+		fmt.Fprintf(b, "  %s\n", st.Warning.Render(fmt.Sprintf("bootstrap: unknown (%v)", p.Live.BootstrapErr)))
 	}
 	if p.Live.PortsErr != nil {
-		fmt.Fprintf(b, "  observed ports: unreadable (%v)\n", p.Live.PortsErr)
+		fmt.Fprintf(b, "  %s\n", st.Warning.Render(fmt.Sprintf("observed ports: unreadable (%v)", p.Live.PortsErr)))
 	}
 	for _, port := range p.Live.Ports {
 		fmt.Fprintf(b, "  observed port: 127.0.0.1:%d -> guest %d\n", port.HostPort, port.GuestPort)
@@ -362,18 +367,18 @@ func (p Plan) renderLive(b *strings.Builder) {
 
 // volumeStatus renders one declared Project volume's compatibility outcome
 // once the check has run: reuse, creation, or a conflict.
-func (p Plan) volumeStatus(pv volumes.Declared) string {
+func (p Plan) volumeStatus(pv volumes.Declared, st ui.Styles) string {
 	if p.VolumeReport == nil {
 		return ""
 	}
 	for _, c := range p.VolumeReport.Conflicts {
 		if c.Declared.Logical == pv.Logical {
-			return " — CONFLICT (see below)"
+			return st.Warning.Render(" — CONFLICT (see below)")
 		}
 	}
 	for _, name := range p.VolumeReport.Reused {
 		if name == pv.Logical {
-			return " (reuses the existing volume)"
+			return st.Positive.Render(" (reuses the existing volume)")
 		}
 	}
 	for _, name := range p.VolumeReport.Fresh {

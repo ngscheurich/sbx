@@ -1,6 +1,6 @@
 # Styled rendering and plain-output goldens
 
-Status: ready-for-agent
+Status: done
 Blocked by: 01
 
 ## Goal
@@ -15,6 +15,11 @@ Surfaces:
 - Error lines on stderr — the `sbx:` prefix color `1` bold, message text default.
 - The remaining sbx-authored lines (`build`/`up`/`exec`/`run` announcements, `rm`'s prompt, `stop`, `port`, `logs` framing, version) — headings bold where present; no new decoration.
 - Guest command stdio: untouched.
+
+## Comments
+
+Done with the issue-02 styling commit. The palette is applied through one rendering path per surface: `plan.Render` takes the style set, help is rendered from data (`renderHelp`/`renderPortHelp`) so headings and command names can take bold, error lines go through `output.fail`/`output.usagef` with only the `sbx:` prefix styled, and the remaining surfaces take headings, warnings, and positive states per the spec. Informational `sbx:` lines (bootstrap progress, image-check pass) stay deliberately default — the palette styles the *error* prefix, and the words carry those messages. Goldens captured from the pre-styling code pin plain output byte-identically (plan, status, both helps, one error line); the status golden substitutes the path-derived Sandbox identity with a token, the one nondeterministic content byte in any report. `mise ci` passes.
+
 
 ## Acceptance
 

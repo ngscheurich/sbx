@@ -1,0 +1,7 @@
+sbx port — manage sandbox ports
+
+Usage:
+  sbx port <subcommand>
+
+Subcommands:
+  prune   Remove port reservations for sandboxes that no longer exist

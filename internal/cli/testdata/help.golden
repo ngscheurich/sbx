@@ -1,0 +1,18 @@
+sbx — worktree-scoped local development sandboxes
+
+Usage:
+  sbx <command> [flags]
+
+Commands:
+  plan    Show what sbx would create for this worktree’s sandbox
+  build   Build this project’s image and register it with the backend
+  run     Run a one-off guest command in a disposable sandbox
+  up      Create or start this worktree’s sandbox
+  exec    Run a guest command in the sandbox (creating/starting if needed)
+  status  Show the sandbox’s identity, state, and drift
+  logs    Show the sandbox’s logs
+  stop    Stop persistent sandbox, keeping its state and volumes
+  rm      Remove the sandbox (requires confirmation)
+  port    Manage sandbox ports
+
+Run sbx from any directory inside a Git worktree that has an sbx.toml.

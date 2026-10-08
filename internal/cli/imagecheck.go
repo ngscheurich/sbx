@@ -86,7 +86,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 	removeCtx := context.WithoutCancel(ctx)
 	defer func() {
 		if err := box.Remove(removeCtx, name); err != nil {
-			fmt.Fprintf(out.stderr, "warning: removing the image-check sandbox %s failed: %v\n", name, err)
+			fmt.Fprintf(out.stderr, "%s removing the image-check sandbox %s failed: %v\n", out.styles.Warning.Render("warning:"), name, err)
 		}
 	}()
 
