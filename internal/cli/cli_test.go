@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,18 +29,54 @@ func TestMain(m *testing.M) {
 	// only holds if UTC is the process zone throughout.
 	os.Setenv("TZ", "UTC")
 	time.Local = time.UTC
-	os.Exit(m.Run())
+	code := m.Run()
+	if seedTemplateDir != "" {
+		os.RemoveAll(seedTemplateDir)
+	}
+	os.Exit(code)
+}
+
+// seedTemplateDir is the once-per-process seeded repository that fixture
+// repos copy from. Built lazily by seedRepo and removed by TestMain.
+var (
+	seedTemplateOnce sync.Once
+	seedTemplateDir  string
+)
+
+// seedRepo returns a fresh copy of a seeded repository, ready for a
+// worktree. Building a repository per fixture the direct way — init, two
+// configs, add, commit — costs six git subprocesses per test, and the suite
+// used to run nearly two thousand of them, which macOS prices at ~20ms per
+// exec. A plain filesystem copy of a repository is a valid repository, so
+// the seed is built once per process and copied instead; only the worktree
+// add still runs git, because worktree metadata bakes in absolute paths.
+func seedRepo(t *testing.T) string {
+	t.Helper()
+	seedTemplateOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "sbx-seed-template")
+		if err != nil {
+			t.Fatal(err)
+		}
+		seedTemplateDir = dir
+		git(t, dir, "init", "-b", "main")
+		git(t, dir, "config", "user.name", "sbx test")
+		git(t, dir, "config", "user.email", "sbx@example.com")
+		if err := os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		git(t, dir, "add", "seed.txt")
+		git(t, dir, "commit", "-m", "seed")
+	})
+	repo := t.TempDir()
+	if err := os.CopyFS(repo, os.DirFS(seedTemplateDir)); err != nil {
+		t.Fatalf("copying the seed repository: %v", err)
+	}
+	return repo
 }
 
 func fixtureRepo(t *testing.T, toml string) (worktree, repo string) {
 	t.Helper()
-	repo = t.TempDir()
-	git(t, repo, "init", "-b", "main")
-	git(t, repo, "config", "user.name", "sbx test")
-	git(t, repo, "config", "user.email", "sbx@example.com")
-	os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("seed\n"), 0o644)
-	git(t, repo, "add", "seed.txt")
-	git(t, repo, "commit", "-m", "seed")
+	repo = seedRepo(t)
 
 	worktree = filepath.Join(t.TempDir(), "wt1")
 	git(t, repo, "worktree", "add", worktree, "-b", "feature")
@@ -329,16 +366,17 @@ func TestDistinctIdentitiesForSameNamedWorktrees(t *testing.T) {
 	}
 }
 
-// seedWorktree clones repo into a sibling directory and adds a worktree at
-// path so that two worktrees can carry the same basename.
+// seedWorktree plants a seeded repository at repo and adds a worktree at
+// path, so that two worktrees can carry the same basename.
 func seedWorktree(t *testing.T, repo, path string) {
 	t.Helper()
-	git(t, repo, "init", "-b", "main")
-	git(t, repo, "config", "user.name", "sbx test")
-	git(t, repo, "config", "user.email", "sbx@example.com")
-	os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("seed\n"), 0o644)
-	git(t, repo, "add", "seed.txt")
-	git(t, repo, "commit", "-m", "seed")
+	copied := seedRepo(t)
+	if err := os.RemoveAll(repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(copied, repo); err != nil {
+		t.Fatal(err)
+	}
 	git(t, repo, "worktree", "add", path, "-b", "feature")
 	if err := os.WriteFile(filepath.Join(path, "sbx.toml"), []byte(validTOML), 0o644); err != nil {
 		t.Fatal(err)

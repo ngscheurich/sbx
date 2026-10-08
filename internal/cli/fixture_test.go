@@ -73,15 +73,7 @@ func copyFile(src, dst string, mode os.FileMode) error {
 // linked worktree and returns the worktree path.
 func fixtureRepoFrom(t *testing.T, fixture string) string {
 	t.Helper()
-	repo := t.TempDir()
-	git(t, repo, "init", "-b", "main")
-	git(t, repo, "config", "user.name", "sbx test")
-	git(t, repo, "config", "user.email", "sbx@example.com")
-	if err := os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, repo, "add", "seed.txt")
-	git(t, repo, "commit", "-m", "seed")
+	repo := seedRepo(t)
 	worktree := filepath.Join(t.TempDir(), "wt1")
 	git(t, repo, "worktree", "add", worktree, "-b", "feature")
 	copyFixture(t, fixture, worktree)
@@ -293,15 +285,7 @@ func TestFixtureStatefulWebUpAndPorts(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	repo := t.TempDir()
-	git(t, repo, "init", "-b", "main")
-	git(t, repo, "config", "user.name", "sbx test")
-	git(t, repo, "config", "user.email", "sbx@example.com")
-	if err := os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, repo, "add", "seed.txt")
-	git(t, repo, "commit", "-m", "seed")
+	repo := seedRepo(t)
 
 	variant := testsupport.FixtureWithoutLines(t,
 		filepath.Join(fixtureStatefulDir, "sbx.toml"), "image_check")
