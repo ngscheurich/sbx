@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Test, vet, fmt, tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install the Go version pinned in mise.toml and trust the config
+      # so `mise run` can execute the project's tasks.
+      - uses: jdx/mise-action@v2
+
+      - name: Run CI gates
+        run: mise run ci
