@@ -23,7 +23,7 @@ target = "/root/.cache/go-build"
 scope = "project"
 
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["proxy.golang.org", "sum.golang.org", "example.com"]
 dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 

@@ -146,7 +146,7 @@ type SecretConfig struct {
 
 // NetworkConfig is the required [network] table.
 type NetworkConfig struct {
-	Egress         string   `toml:"egress"`
+	Policy         string   `toml:"policy"`
 	Allow          []string `toml:"allow"`
 	DNSNameservers []string `toml:"dns_nameservers"`
 }
@@ -435,7 +435,7 @@ func (c *Config) validateSecrets() []string {
 }
 
 // validatePorts checks each [ports.<name>] entry: the name's shape, the
-// required guest port, and the egress="none" conflict — a network that
+// required guest port, and the policy="none" conflict — a network that
 // allows no traffic at all cannot serve a published port.
 func (c *Config) validatePorts() []string {
 	var problems []string
@@ -447,8 +447,8 @@ func (c *Config) validatePorts() []string {
 			problems = append(problems, fmt.Sprintf("ports.%s: guest is required and must be a TCP port between 1 and 65535", name))
 		}
 	}
-	if len(c.Ports) > 0 && c.Network.Egress == "none" {
-		problems = append(problems, `ports: declared ports are invalid with egress = "none", which allows no traffic at all`)
+	if len(c.Ports) > 0 && c.Network.Policy == "none" {
+		problems = append(problems, `ports: declared ports are invalid with policy = "none", which allows no traffic at all`)
 	}
 	return problems
 }
@@ -485,17 +485,17 @@ var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func (n *NetworkConfig) validate() []string {
 	var problems []string
-	switch n.Egress {
+	switch n.Policy {
 	case "public", "none", "allowlist":
 	default:
-		problems = append(problems, `network: egress is required and must be "public", "allowlist", or "none"`)
+		problems = append(problems, `network: policy is required and must be "public", "allowlist", or "none"`)
 	}
-	if n.Egress != "allowlist" && len(n.Allow) > 0 {
-		problems = append(problems, `network: allow is only valid with egress = "allowlist"`)
+	if n.Policy != "allowlist" && len(n.Allow) > 0 {
+		problems = append(problems, `network: allow is only valid with policy = "allowlist"`)
 	}
-	if n.Egress == "allowlist" {
+	if n.Policy == "allowlist" {
 		if len(n.Allow) == 0 {
-			problems = append(problems, `network: allow is required and must not be empty with egress = "allowlist"`)
+			problems = append(problems, `network: allow is required and must not be empty with policy = "allowlist"`)
 		}
 		for _, entry := range n.Allow {
 			if !AllowEntryValid(entry) {
@@ -503,9 +503,9 @@ func (n *NetworkConfig) validate() []string {
 			}
 		}
 	}
-	if n.Egress == "none" {
+	if n.Policy == "none" {
 		if len(n.DNSNameservers) > 0 {
-			problems = append(problems, `network: dns_nameservers is invalid with egress = "none", which allows no traffic at all`)
+			problems = append(problems, `network: dns_nameservers is invalid with policy = "none", which allows no traffic at all`)
 		}
 	}
 	for _, ns := range n.DNSNameservers {

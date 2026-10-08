@@ -41,7 +41,7 @@ target = "/root/.cache/go-build"
 scope = "project"
 
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["proxy.golang.org", "sum.golang.org", "example.com"]
 dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 
@@ -119,10 +119,10 @@ func TestSandboxTranslatesRestrictedFixture(t *testing.T) {
 		t.Errorf("go_mod mount = %+v (namespace %s)", o.Named[1], ns)
 	}
 	if !o.TLSIntercept {
-		t.Error("allowlist egress must turn on TLS interception")
+		t.Error("allowlist policy must turn on TLS interception")
 	}
 	if o.NoNet {
-		t.Error("allowlist egress must not disable the network")
+		t.Error("allowlist policy must not disable the network")
 	}
 	wantRules := []string{"allow@proxy.golang.org", "allow@sum.golang.org", "allow@example.com"}
 	if len(o.NetRules) != len(wantRules) {
@@ -180,7 +180,7 @@ scope = "project"
 quota = "4G"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	tr, err := Sandbox(info(root), cfg, "disposable")
 	if err != nil {
@@ -251,7 +251,7 @@ source = "./rel.txt"
 target = "/rel"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	tr, err := Sandbox(info(root), cfg, "disposable")
 	if err != nil {
@@ -285,7 +285,7 @@ source = "./absent.txt"
 target = "/absent"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	_, err := Sandbox(info(root), cfg, "disposable")
 	if err == nil {
@@ -320,7 +320,7 @@ source = "`+source+`"
 target = "/mnt"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 		if _, err := Sandbox(info(root), cfg, "disposable"); err == nil {
 			t.Errorf("Sandbox accepted bind source %q", source)
@@ -354,7 +354,7 @@ kind = "disk"
 size = "2G"
 
 [network]
-egress = "none"
+policy = "none"
 `)
 	tr, err := Sandbox(info(root), cfg, "persistent")
 	if err != nil {
@@ -375,10 +375,10 @@ egress = "none"
 		t.Errorf("Owned = %+v", o.Owned)
 	}
 	if !o.NoNet {
-		t.Error("egress none must set NoNet")
+		t.Error("policy none must set NoNet")
 	}
 	if o.TLSIntercept || len(o.NetRules) > 0 {
-		t.Errorf("egress none must not carry allowlist policy: rules=%v tls=%v", o.NetRules, o.TLSIntercept)
+		t.Errorf("policy none must not carry allowlist policy: rules=%v tls=%v", o.NetRules, o.TLSIntercept)
 	}
 	for _, l := range o.Labels {
 		if l.Key == "sbx.mode" && l.Value != "persistent" {
@@ -398,7 +398,7 @@ cpus = 1
 memory = "1G"
 
 [network]
-egress = "public"
+policy = "public"
 
 [ports.web]
 guest = 4000
@@ -440,7 +440,7 @@ B = "2"
 A = "1"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	tr, err := Sandbox(info(root), cfg, "disposable")
 	if err != nil {
@@ -481,7 +481,7 @@ from_env = "HOST_B"
 allow = ["b.example.com"]
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	lookup := func(key string) (string, bool) {
 		if key == "HOST_A" {

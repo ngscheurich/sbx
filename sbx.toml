@@ -52,4 +52,4 @@ target = "/root/.pi/agent/trust.json"
 read_only = true
 
 [network]
-egress = "public"
+policy = "public"

@@ -17,7 +17,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 
 [ports.web]
 guest = 4000

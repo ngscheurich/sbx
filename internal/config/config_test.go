@@ -23,7 +23,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 func TestLoadMinimal(t *testing.T) {
@@ -43,8 +43,8 @@ func TestLoadMinimal(t *testing.T) {
 	if cfg.Shell != "/bin/sh" {
 		t.Errorf("Shell = %q, want default /bin/sh", cfg.Shell)
 	}
-	if cfg.Network.Egress != "public" {
-		t.Errorf("Egress = %q", cfg.Network.Egress)
+	if cfg.Network.Policy != "public" {
+		t.Errorf("Policy = %q", cfg.Network.Policy)
 	}
 }
 
@@ -55,7 +55,7 @@ cpus = 1
 memory = "1G"
 
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["proxy.golang.org", "*.example.com"]
 `
 	cfg, err := Load(write(t, content))
@@ -77,55 +77,55 @@ func TestLoadValidationFailures(t *testing.T) {
 cpus = 1
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `image`},
 		{"blank image", `
 image = ""
 cpus = 1
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `image`},
 		{"missing cpus", `
 image = "alpine"
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `cpus`},
 		{"zero cpus", `
 image = "alpine"
 cpus = 0
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `cpus`},
 		{"negative cpus", `
 image = "alpine"
 cpus = -1
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `cpus`},
 		{"nan cpus", `
 image = "alpine"
 cpus = nan
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `cpus`},
 		{"infinite cpus", `
 image = "alpine"
 cpus = inf
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `cpus`},
 		{"zero memory", `
 image = "alpine"
 cpus = 1
 memory = "0G"
 [network]
-egress = "public"
+policy = "public"
 `, `memory`},
 		{"duplicate volume targets", `
 image = "alpine"
@@ -138,7 +138,7 @@ scope = "sandbox"
 target = "/data"
 scope = "sandbox"
 [network]
-egress = "public"
+policy = "public"
 `, `duplicate mount target`},
 		{"volume target collides with workspace", `
 image = "alpine"
@@ -148,7 +148,7 @@ memory = "1G"
 target = "/workspace"
 scope = "sandbox"
 [network]
-egress = "public"
+policy = "public"
 `, `duplicate mount target`},
 		{"volume target collides with a mount", `
 image = "alpine"
@@ -162,7 +162,7 @@ target = "/mnt/x"
 target = "/mnt/x"
 scope = "sandbox"
 [network]
-egress = "public"
+policy = "public"
 `, `duplicate mount target`},
 		{"env reference in bind target", `
 image = "alpine"
@@ -173,7 +173,7 @@ type = "bind"
 source = "./x"
 target = "/mnt/x${y}"
 [network]
-egress = "public"
+policy = "public"
 `, `environment reference`},
 		{"env reference in volume target", `
 image = "alpine"
@@ -183,7 +183,7 @@ memory = "1G"
 target = "/var/lib/${x}"
 scope = "sandbox"
 [network]
-egress = "public"
+policy = "public"
 `, `environment reference`},
 		{"secret name collides with env", `
 image = "alpine"
@@ -195,59 +195,59 @@ FOO = "bar"
 from_env = "HOST_FOO"
 allow = ["example.com"]
 [network]
-egress = "public"
+policy = "public"
 `, `conflicts`},
 		{"missing memory", `
 image = "alpine"
 cpus = 1
 [network]
-egress = "public"
+policy = "public"
 `, `memory`},
 		{"invalid memory format", `
 image = "alpine"
 cpus = 1
 memory = "512MB"
 [network]
-egress = "public"
+policy = "public"
 `, `memory`},
 		{"memory lowercase suffix", `
 image = "alpine"
 cpus = 1
 memory = "512m"
 [network]
-egress = "public"
+policy = "public"
 `, `memory`},
 		{"missing network", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 `, `network`},
-		{"invalid egress", `
+		{"invalid policy", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "bridged"
-`, `egress`},
-		{"missing egress", `
+policy = "bridged"
+`, `policy`},
+		{"missing policy", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-`, `egress`},
+`, `policy`},
 		{"allowlist without allow", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "allowlist"
+policy = "allowlist"
 `, `allow`},
 		{"empty allow", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = []
 `, `allow`},
 		{"allow outside allowlist", `
@@ -255,7 +255,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 allow = ["example.com"]
 `, `allow`},
 		{"single-label domain", `
@@ -263,7 +263,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["localhost"]
 `, `allow`},
 		{"suffix with one label", `
@@ -271,7 +271,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["*.com"]
 `, `allow`},
 		{"dns_nameservers not an address with allowlist", `
@@ -279,7 +279,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["example.com"]
 dns_nameservers = ["dns.example.com"]
 `, `dns_nameservers`},
@@ -289,28 +289,28 @@ cpus = 1
 memory = "1G"
 unknown = true
 [network]
-egress = "public"
+policy = "public"
 `, `unknown`},
 		{"wrong type for cpus", `
 image = "alpine"
 cpus = "two"
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 `, `cpus`},
 		{"wrong type for memory", `
 image = "alpine"
 cpus = 1
 memory = 512
 [network]
-egress = "public"
+policy = "public"
 `, `memory`},
 		{"wrong type for allow", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = "example.com"
 `, `allow`},
 		{"shell table instead of string", `
@@ -318,7 +318,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 [shell]
 `, `shell`},
 	}
@@ -398,7 +398,7 @@ func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
 // guest script's path, and that declaring it empty is rejected: an empty
 // declaration would silently mean "no check".
 func TestLoadImageCheck(t *testing.T) {
-	base := "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"image-check.sh\"\n\n[network]\negress = \"public\"\n"
+	base := "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"image-check.sh\"\n\n[network]\npolicy = \"public\"\n"
 	cfg, err := Load(write(t, base))
 	if err != nil {
 		t.Fatalf("Load with image_check: %v", err)
@@ -407,7 +407,7 @@ func TestLoadImageCheck(t *testing.T) {
 		t.Errorf("ImageCheck = %q, want %q", cfg.ImageCheck, "image-check.sh")
 	}
 
-	_, err = Load(write(t, "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"\"\n\n[network]\negress = \"public\"\n"))
+	_, err = Load(write(t, "image = \"alpine:3.20\"\ncpus = 1\nmemory = \"1G\"\nimage_check = \"\"\n\n[network]\npolicy = \"public\"\n"))
 	if err == nil || !strings.Contains(err.Error(), "image_check") {
 		t.Errorf("empty image_check error = %v, want it to name image_check", err)
 	}
@@ -445,17 +445,17 @@ func TestLoadPortValidationFailures(t *testing.T) {
 		{"guest too low", minimal + "\n[ports.web]\nguest = 0", "ports.web: guest is required"},
 		{"guest too high", minimal + "\n[ports.web]\nguest = 65536", "ports.web: guest is required"},
 		{"bad name", minimal + "\n[ports.Web]\nguest = 4000", `ports: name "Web"`},
-		{"egress none", `
+		{"policy none", `
 image = "alpine"
 cpus = 1
 memory = "1G"
 
 [network]
-egress = "none"
+policy = "none"
 
 [ports.web]
 guest = 4000
-`, `ports: declared ports are invalid with egress = "none"`},
+`, `ports: declared ports are invalid with policy = "none"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -622,7 +622,7 @@ size = "512M"
 noexec = true
 
 [network]
-egress = "public"
+policy = "public"
 `
 	cfg, err := Load(write(t, content))
 	if err != nil {
@@ -676,7 +676,7 @@ from_env = "SBX_FIXTURE_TOKEN"
 allow = ["example.com"]
 
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["example.com"]
 dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 `
@@ -712,7 +712,7 @@ cpus = 1
 memory = "1G"
 
 [network]
-egress = "public"
+policy = "public"
 `
 	tests := []struct {
 		name    string
@@ -726,7 +726,7 @@ memory = "1G"
 [workspace]
 target = "work"
 [network]
-egress = "public"
+policy = "public"
 `, `workspace`},
 		{"mount without type", base + `
 [[mounts]]
@@ -880,7 +880,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "none"
+policy = "none"
 dns_nameservers = ["1.1.1.1"]
 `, `dns_nameservers`},
 		{"dns_nameservers not an address", `
@@ -888,7 +888,7 @@ image = "alpine"
 cpus = 1
 memory = "1G"
 [network]
-egress = "public"
+policy = "public"
 dns_nameservers = ["dns.example.com"]
 `, `dns_nameservers`},
 		{"tmpfs with read_only", base + `

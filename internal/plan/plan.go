@@ -391,13 +391,13 @@ func (p Plan) volumeStatus(pv volumes.Declared, st ui.Styles) string {
 
 func describeNetwork(n config.NetworkConfig) string {
 	var parts []string
-	switch n.Egress {
+	switch n.Policy {
 	case "allowlist":
-		parts = append(parts, "egress allowlist, deny by default, TLS interception on")
+		parts = append(parts, "policy allowlist, deny by default, TLS interception on")
 	case "none":
-		parts = append(parts, "egress none (--no-net)")
+		parts = append(parts, "policy none (--no-net)")
 	default:
-		parts = append(parts, "egress public")
+		parts = append(parts, "policy public")
 	}
 	if len(n.DNSNameservers) > 0 {
 		parts = append(parts, "dns "+strings.Join(n.DNSNameservers, ", "))

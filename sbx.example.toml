@@ -74,7 +74,7 @@ size = "8G"
 # Named TCP guest services a persistent sandbox publishes on a host loopback
 # port. The host port is never configured: sbx reserves one from 4001–4099
 # at creation, and the reservation survives sandbox removal until pruned.
-# Names must match [a-z][a-z0-9_]*; invalid with egress = "none".
+# Names must match [a-z][a-z0-9_]*; invalid with policy = "none".
 
 [ports.web]
 guest = 4000                  # TCP port the service listens on inside the sandbox (1–65535)
@@ -100,17 +100,17 @@ allow = [                     # required, non-empty: destinations the value may 
 ]
 
 # ── [network] ────────────────────────────────────────────────────────────────
-# Required. Egress policy: "public" (all traffic), "allowlist" (only
+# Required. Network policy: "public" (all traffic), "allowlist" (only
 # declared destinations), or "none" (no traffic at all).
 
 [network]
-egress = "allowlist"
-allow = [                     # required and non-empty iff egress = "allowlist"; invalid otherwise
+policy = "allowlist"
+allow = [                     # required and non-empty iff policy = "allowlist"; invalid otherwise
   "github.com",
   "*.docker.io",
   "registry.npmjs.org",
 ]
-dns_nameservers = [           # optional; invalid with egress = "none". IP or IP:PORT.
+dns_nameservers = [           # optional; invalid with policy = "none". IP or IP:PORT.
   "1.1.1.1",
   "8.8.8.8:53",
 ]

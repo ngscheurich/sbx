@@ -21,7 +21,7 @@ sandbox:
     (compatibility with existing volumes is checked before any creation)
   environment:
     - MODE=test
-  network: egress allowlist, deny by default, TLS interception on, dns 1.1.1.1
+  network: policy allowlist, deny by default, TLS interception on, dns 1.1.1.1
   secrets (values never appear in this plan):
     - TOKEN: host variable SBX_PLAN_TOKEN, sent only to example.com
   secret map passed as --secret-conf:

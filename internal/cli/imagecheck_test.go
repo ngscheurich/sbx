@@ -26,7 +26,7 @@ memory = "2G"
 image_check = "image-check.sh"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // checkScript is the guest script the tests declare; its passing form

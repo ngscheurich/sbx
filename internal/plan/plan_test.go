@@ -74,7 +74,7 @@ func TestRenderShowsIdentityAndConfiguration(t *testing.T) {
 		"/src/app/.git",
 		"alpine:3.20",
 		"2G",
-		"egress",
+		"policy",
 		"/bin/sh",
 		"sbx changed nothing",
 	} {
@@ -148,7 +148,7 @@ cpus = 1
 memory = "1G"
 
 [network]
-egress = "public"
+policy = "public"
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -262,7 +262,7 @@ source = "./absent.txt"
 target = "/absent"
 
 [network]
-egress = "public"
+policy = "public"
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -293,7 +293,7 @@ target = "/mnt/notes.txt"
 read_only = true
 
 [network]
-egress = "public"
+policy = "public"
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)

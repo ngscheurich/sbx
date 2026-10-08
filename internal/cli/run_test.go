@@ -31,7 +31,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // TestRunSequencePinsBackendCalls checks the exact call sequence and the
@@ -121,7 +121,7 @@ memory = "1G"
 shell = "/bin/bash"
 
 [network]
-egress = "none"
+policy = "none"
 `
 	_, _, stderr, fake := runFixture(t, toml)
 	if !strings.Contains(stderr.String(), "guest-stderr") {
@@ -332,7 +332,7 @@ func TestRunMountsProjectVolume(t *testing.T) {
 
 // TestRunTranslatesMountsEnvAndAllowlist checks the full msb run argv for
 // bind and tmpfs mounts, environment, sandbox volumes, and allowlist
-// egress with DNS, resolved against the worktree root.
+// policy with DNS, resolved against the worktree root.
 func TestRunTranslatesMountsEnvAndAllowlist(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_TEST_TOKEN", "throwaway-value-7b2f")
@@ -368,7 +368,7 @@ from_env = "SBX_TEST_TOKEN"
 allow = ["example.com"]
 
 [network]
-egress = "allowlist"
+policy = "allowlist"
 allow = ["example.com", "*.example.org"]
 dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 `)
@@ -475,7 +475,7 @@ from_env = "SBX_DEFINITELY_UNSET_VARIABLE"
 allow = ["example.com"]
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	var stdout, stderr bytes.Buffer
 	code := chdir(t, worktree, func() int {

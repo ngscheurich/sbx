@@ -144,7 +144,7 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 			{Key: "sbx.worktree", Value: info.WorktreeRoot},
 		},
 	}
-	switch cfg.Network.Egress {
+	switch cfg.Network.Policy {
 	case "none":
 		options.NoNet = true
 	case "allowlist":

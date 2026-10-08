@@ -554,8 +554,8 @@ func TestCreateArgsFullSurface(t *testing.T) {
 	}
 }
 
-// TestCreateArgsMinimal pins the public-egress minimal form: no network
-// flags at all, msb's default policy.
+// TestCreateArgsMinimal pins the minimal form for sbx network policy
+// "public": no network flags at all, msb's default policy.
 func TestCreateArgsMinimal(t *testing.T) {
 	args := CreateArgs(CreateOptions{Image: "alpine:3.20", CPUs: 1, Memory: "1G"})
 	want := []string{"alpine:3.20", "--cpus", "1", "--memory", "1G"}

@@ -22,7 +22,7 @@ memory = "2G"
 image_check = "image-check.sh"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // checkFixture prepares a persistent fixture with an image-check script.

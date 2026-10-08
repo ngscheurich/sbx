@@ -20,7 +20,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 
 [build]
 context = "."
@@ -35,7 +35,7 @@ memory = "2G"
 image_check = "image-check.sh"
 
 [network]
-egress = "public"
+policy = "public"
 
 [build]
 context = "."
@@ -168,7 +168,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 
 [build]
 context = "./docker"

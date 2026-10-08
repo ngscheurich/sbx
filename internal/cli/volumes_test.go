@@ -27,7 +27,7 @@ target = "/cache"
 scope = "project"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // mixedVolumesTOML declares one Project volume and one Sandbox disk
@@ -48,7 +48,7 @@ kind = "disk"
 size = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // projectVolumeName derives the backend name a worktree's Project volume
@@ -150,7 +150,7 @@ kind = "disk"
 size = "8G"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	// Simulate the volume a sibling worktree's earlier run created, with
 	// the non-null capacity_bytes a real disk volume reports.
@@ -186,7 +186,7 @@ kind = "disk"
 size = "8G"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	fake.SeedVolume(t, projectVolumeName(t, worktree, "data"), "disk", testsupport.Int64(4294967296), nil)
 
@@ -234,7 +234,7 @@ kind = "disk"
 size = "%s"
 
 [network]
-egress = "public"
+policy = "public"
 `
 	worktree, repo := fixtureRepo(t, fmt.Sprintf(withSize, "8G"))
 	if code, _, stderr := sbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {

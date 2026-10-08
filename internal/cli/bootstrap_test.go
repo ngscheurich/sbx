@@ -27,7 +27,7 @@ memory = "2G"
 run = "echo bootstrapped > /workspace/.bootstrapped"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // bootstrapRun is bootstrapTOML's definition, for hash comparisons.
@@ -581,7 +581,7 @@ scope = "sandbox"
 run = "exit 1"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	var stdout, stderr strings.Builder
 	code := chdir(t, worktree, func() int {

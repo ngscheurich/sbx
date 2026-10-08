@@ -300,7 +300,7 @@ func renderList(items []string) string {
 	return "[" + strings.Join(items, "; ") + "]"
 }
 
-// renderNetwork summarizes the network policy: egress mode, allow rules,
+// renderNetwork summarizes the network policy mode: allow rules,
 // DNS, TLS interception, and total disconnection.
 func renderNetwork(o msb.CreateOptions) string {
 	var parts []string
@@ -310,7 +310,7 @@ func renderNetwork(o msb.CreateOptions) string {
 	case len(o.NetRules) > 0:
 		parts = append(parts, "allowlist "+renderList(o.NetRules))
 	default:
-		parts = append(parts, "public egress")
+		parts = append(parts, "public policy")
 	}
 	if o.TLSIntercept {
 		parts = append(parts, "TLS interception on")

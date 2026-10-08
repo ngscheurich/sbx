@@ -253,7 +253,7 @@ type CreateOptions struct {
 	// --secret-conf. It contains secret names and host-variable references
 	// only; msb resolves the values from its own environment at start time.
 	SecretConf string
-	// NoNet disables all network access (egress "none" in sbx terms).
+	// NoNet disables all network access (network policy "none" in sbx terms).
 	NoNet bool
 	// Publish lists the guest TCP services published on the host loopback,
 	// in translation order. Only persistent sandboxes publish ports.

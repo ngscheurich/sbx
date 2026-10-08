@@ -25,7 +25,7 @@ source = "./absent.txt"
 target = "/absent"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // styledScenarios drives the three surfaces the acceptance names, through

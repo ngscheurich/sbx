@@ -49,7 +49,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 func TestHelpListsOnlyV1Commands(t *testing.T) {
@@ -227,7 +227,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "bridged"
+policy = "bridged"
 `)
 
 	var stdout, stderr bytes.Buffer
@@ -237,7 +237,7 @@ egress = "bridged"
 	if code == 0 {
 		t.Fatal("plan succeeded with an invalid network mode")
 	}
-	if !strings.Contains(stderr.String(), "egress") {
+	if !strings.Contains(stderr.String(), "policy") {
 		t.Errorf("stderr does not mention the invalid field:\n%s", stderr.String())
 	}
 }
@@ -254,7 +254,7 @@ cpus = 4
 memory = "8G"
 
 [network]
-egress = "none"
+policy = "none"
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}

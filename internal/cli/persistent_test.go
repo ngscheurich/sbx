@@ -24,7 +24,7 @@ cpus = 2
 memory = "2G"
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // secretTOML declares one destination-scoped secret.
@@ -38,7 +38,7 @@ from_env = "SBX_TEST_TOKEN"
 allow = ["example.com"]
 
 [network]
-egress = "public"
+policy = "public"
 `
 
 // persistentFixture prepares a fake msb, a private host state directory, and
@@ -328,7 +328,7 @@ memory = "1G"
 shell = "/bin/bash"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	if code, _, stderr := sbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
@@ -507,7 +507,7 @@ kind = "disk"
 size = "8G"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	id := sandboxIdentityOf(t, worktree)
 	code, _, stderr := sbxUp(t, worktree)
@@ -885,7 +885,7 @@ kind = "disk"
 size = "8G"
 
 [network]
-egress = "public"
+policy = "public"
 `)
 	id := sandboxIdentityOf(t, worktree)
 	if code, _, stderr := sbxUp(t, worktree); code != 0 {
