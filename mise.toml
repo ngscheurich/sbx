@@ -9,6 +9,14 @@ run = 'go build -o "bin/sbx-$(go env GOOS)-$(go env GOARCH)" ./cmd/sbx'
 description = "Remove all build artifacts"
 run = "rm -f bin/*"
 
+[tasks.install]
+description = "Install local build"
+run = "go install ./cmd/sbx"
+
+[tasks.uninstall]
+description = "Uninstall sbx"
+run = "rm $(which sbx)"
+
 [tasks.test]
 description = "Run test suite"
 run = "go test ./..."
