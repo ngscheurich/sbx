@@ -935,3 +935,76 @@ readonly = true
 		})
 	}
 }
+
+// TestLoadAliases checks that [aliases] loads as a table of names to sbx
+// command lines.
+func TestLoadAliases(t *testing.T) {
+	cfg, err := Load(write(t, minimal+`
+[aliases]
+ls = "exec -- ls"
+ll = "ls"
+`))
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	want := map[string]string{"ls": "exec -- ls", "ll": "ls"}
+	for name, value := range want {
+		if got := cfg.Aliases[name]; got != value {
+			t.Errorf("aliases[%q] = %q, want %q", name, got, value)
+		}
+	}
+	if len(cfg.Aliases) != len(want) {
+		t.Errorf("aliases = %v, want %v", cfg.Aliases, want)
+	}
+}
+
+// TestLoadRejectsUninvocableAliasNames pins the name rules: a name that can
+// never be invoked — empty, whitespace, or flag-like — is a load error, not
+// dead configuration.
+func TestLoadRejectsUninvocableAliasNames(t *testing.T) {
+	tests := map[string]string{
+		"leading dash": minimal + "\n[aliases]\n\"-x\" = \"exec -- ls\"\n",
+		"whitespace":   minimal + "\n[aliases]\n\"my ls\" = \"exec -- ls\"\n",
+		"empty":        minimal + "\n[aliases]\n\"\" = \"exec -- ls\"\n",
+	}
+	for name, content := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(write(t, content))
+			if err == nil {
+				t.Fatalf("Load succeeded with an uninvocable alias name:\n%s", content)
+			}
+			if !strings.Contains(err.Error(), "can never be invoked") {
+				t.Errorf("error = %q, want it to say the name can never be invoked", err.Error())
+			}
+		})
+	}
+}
+
+// TestLoadRejectsEmptyAliasValue: a value that expands to nothing could
+// never dispatch, so declaring one is a load error.
+func TestLoadRejectsEmptyAliasValue(t *testing.T) {
+	for _, content := range []string{
+		minimal + "\n[aliases]\nls = \"\"\n",
+		minimal + "\n[aliases]\nls = \"   \"\n",
+	} {
+		_, err := Load(write(t, content))
+		if err == nil {
+			t.Fatalf("Load succeeded with an empty alias value:\n%s", content)
+		}
+		if !strings.Contains(err.Error(), "aliases.ls") {
+			t.Errorf("error = %q, want it to name aliases.ls", err.Error())
+		}
+	}
+}
+
+// TestLoadRejectsNonStringAliasValue: an alias value is a command line, so
+// a number or table is a type error like any other malformed declaration.
+func TestLoadRejectsNonStringAliasValue(t *testing.T) {
+	_, err := Load(write(t, minimal+"\n[aliases]\nls = 3\n"))
+	if err == nil {
+		t.Fatal("Load succeeded with a numeric alias value")
+	}
+	if !strings.Contains(err.Error(), "sbx.toml") {
+		t.Errorf("error = %q, want it to name sbx.toml", err.Error())
+	}
+}

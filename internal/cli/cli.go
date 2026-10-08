@@ -140,12 +140,16 @@ func renderPortHelp(st ui.Styles) string {
 
 // Run dispatches one command line and returns the process exit code. The
 // context carries cancellation (sbx forwards it to the running guest) and
-// stdin is passed through to guest commands.
+// stdin is passed through to guest commands. An unknown first word may be a
+// project alias; see dispatch for how deep that resolution may go.
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// --plain (alias --no-color) is a global flag and leads the command
 	// line, before the command name; a token after the command belongs to
 	// that command, and past exec's `--` separator even `--plain` is a
-	// guest argument, so it is never stripped there.
+	// guest argument, so it is never stripped there. It is stripped once,
+	// here at depth zero: an alias expansion re-enters dispatch past this
+	// point, so `--plain` inside an expansion belongs to the command the
+	// expansion names.
 	plain := false
 loop:
 	for len(args) > 0 {
@@ -159,12 +163,25 @@ loop:
 			break loop
 		}
 	}
-	out := newOutput(stdout, stderr, plain)
+	return dispatch(ctx, args, stdin, newOutput(stdout, stderr, plain), 0)
+}
+
+// dispatch is Run's re-entrant body. depth counts alias expansions: zero is
+// the invocation the user typed, one an expansion, two an expansion through
+// an expansion. Only the depth-zero word warns about shadowing — that is
+// the name the user typed; deeper words were chosen by an alias.
+func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, depth int) int {
 	if len(args) == 0 {
 		fmt.Fprint(out.stdout, renderHelp(out.styles))
 		return exitOK
 	}
 	cmd := args[0]
+	// A builtin command always wins over an alias of the same name, and
+	// says so once, on the invocation the user typed. help and version
+	// stay config-free, so they take no part in the check.
+	if depth == 0 && builtinCommands[cmd] {
+		warnIfShadowed(ctx, cmd, out)
+	}
 	switch cmd {
 	case "-h", "--help", "help":
 		fmt.Fprint(out.stdout, renderHelp(out.styles))
@@ -208,9 +225,59 @@ loop:
 		fmt.Fprintln(out.stdout, currentVersion())
 		return exitOK
 	default:
+		return dispatchUnknown(ctx, cmd, args, stdin, out, depth)
+	}
+}
+
+// builtinCommands is every command name dispatch switches on. It must stay
+// in sync with that switch; help and version are deliberately absent
+// because they never load configuration.
+var builtinCommands = map[string]bool{
+	"plan": true, "build": true, "run": true, "up": true, "exec": true,
+	"status": true, "list": true, "logs": true, "stop": true, "rm": true,
+	"port": true,
+}
+
+// maxAliasDepth is the dispatch depth at which alias resolution stops: the
+// typed word may expand once and its expansion once more (`ll = "ls"`), so
+// a self-referential or deeper chain fails fast instead of recursing.
+const maxAliasDepth = 2
+
+// warnIfShadowed prints the builtin-wins warning when the invoked command
+// name is also declared in [aliases]. Reading the project configuration is
+// best-effort: a file that cannot be loaded carries no alias knowledge, so
+// the builtin runs without the warning rather than failing — commands that
+// need the configuration report its errors themselves.
+func warnIfShadowed(ctx context.Context, cmd string, out *output) {
+	_, cfg, err := discoverConfig(ctx)
+	if err != nil {
+		return
+	}
+	if _, shadowed := cfg.Aliases[cmd]; shadowed {
+		fmt.Fprintf(out.stderr, "%s %q is also declared in [aliases]; the builtin command runs\n", out.styles.Warning.Render("warning:"), cmd)
+	}
+}
+
+// dispatchUnknown resolves an unknown first word. Project configuration is
+// loaded exactly the way every command loads it — a discovery or load
+// failure fails the invocation with the same error `sbx plan` would print —
+// and an alias hit re-dispatches as if typed, with the original arguments
+// appended. A miss is the unknown-command error, unchanged.
+func dispatchUnknown(ctx context.Context, cmd string, args []string, stdin io.Reader, out *output, depth int) int {
+	if depth >= maxAliasDepth {
+		return out.usagef("alias chain too deep at %q; an alias may expand through one other alias", cmd)
+	}
+	_, cfg, err := discoverConfig(ctx)
+	if err != nil {
+		return out.fail(err)
+	}
+	expansion, ok := cfg.Aliases[cmd]
+	if !ok {
 		fmt.Fprintf(out.stderr, "%s unknown command %q\n\n%s", out.styles.Error.Render("sbx:"), cmd, renderHelp(out.styles))
 		return exitUsage
 	}
+	expanded := append(strings.Fields(expansion), args[1:]...)
+	return dispatch(ctx, expanded, stdin, out, depth+1)
 }
 
 func runPlan(ctx context.Context, out *output) int {

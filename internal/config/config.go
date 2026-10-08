@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 )
@@ -19,8 +20,8 @@ import (
 // Later releases extend it; anything else must be rejected explicitly rather
 // than silently ignored.
 const supportedFields = `image, cpus, memory, shell, image_check, [workspace],
-[mounts], [volumes], [ports], [env], [secrets], [bootstrap], [network] (with
-allow and dns_nameservers), and [build]`
+[mounts], [volumes], [ports], [env], [secrets], [bootstrap], [aliases],
+[network] (with allow and dns_nameservers), and [build]`
 
 // notYetSupported are field names that the spec defines but this build does
 // not translate yet. Declaring any of them is an error, not a warning.
@@ -48,6 +49,11 @@ type Config struct {
 	// and imports it and nothing else may.
 	Build     *BuildConfig    `toml:"build"`
 	Bootstrap BootstrapConfig `toml:"bootstrap"`
+	// Aliases are project-configured shorthands for sbx command lines,
+	// resolved when the first word of an invocation matches no builtin.
+	// They are host-side command sugar: never part of the translation, the
+	// Sandbox identity, or Creation drift.
+	Aliases map[string]string `toml:"aliases"`
 }
 
 // BuildConfig is the optional [build] table: the Docker recipe for the
@@ -244,10 +250,32 @@ func (c *Config) Validate() error {
 	problems = append(problems, c.validatePorts()...)
 	problems = append(problems, c.Network.validate()...)
 	problems = append(problems, c.validateBuild()...)
+	problems = append(problems, c.validateAliases()...)
 	if len(problems) > 0 {
 		return fmt.Errorf("sbx.toml is invalid:\n  %s", strings.Join(problems, "\n  "))
 	}
 	return nil
+}
+
+// validateAliases rejects alias names that can never be invoked and values
+// that expand to nothing. A name that shadows a builtin is permitted: the
+// builtin wins at dispatch, with a warning when the name is invoked.
+func (c *Config) validateAliases() []string {
+	names := make([]string, 0, len(c.Aliases))
+	for name := range c.Aliases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var problems []string
+	for _, name := range names {
+		if name == "" || strings.HasPrefix(name, "-") || strings.IndexFunc(name, unicode.IsSpace) >= 0 {
+			problems = append(problems, fmt.Sprintf("aliases: name %q can never be invoked; use a name that is not empty, does not start with \"-\", and has no whitespace", name))
+		}
+		if len(strings.Fields(c.Aliases[name])) == 0 {
+			problems = append(problems, fmt.Sprintf("aliases.%s: value is empty; give the sbx command line the alias stands for", name))
+		}
+	}
+	return problems
 }
 
 func (c *Config) validateWorkspace() []string {

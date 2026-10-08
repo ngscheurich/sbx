@@ -135,3 +135,14 @@ platform = "linux/amd64"      # optional; default linux/<host arch> (os/arch[/va
 run = '''
 printf "bootstrapped\n" > "$SBX_DATA_DIR/bootstrapped"
 '''
+
+# ── [aliases] ──────────────────────────────────────────────────────━─
+# Optional. Project shorthands for sbx command lines, resolved when the
+# first word of an invocation matches no builtin. The value is split on
+# whitespace and dispatched as if typed, with any extra arguments
+# appended; it may expand through one other alias. Aliases never affect
+# the sandbox's identity or Creation drift. A builtin command always wins
+# over an alias of the same name, with a warning when the name is used.
+
+# [aliases]
+# ls = "exec -- ls"
