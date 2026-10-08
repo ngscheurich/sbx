@@ -436,7 +436,7 @@ func TestUpRefusesUnresolvableImage(t *testing.T) {
 	if code == 0 {
 		t.Fatal("up treated an unresolvable image as unchanged")
 	}
-	if !strings.Contains(stderr, "could not be confirmed") {
+	if !strings.Contains(stderr, "could not be inspected") {
 		t.Errorf("stderr does not report the unconfirmed image:\n%s", stderr)
 	}
 }

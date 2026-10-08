@@ -3,7 +3,7 @@ status: Running
 created at: 2024-01-01T00:00:00Z
 created from image contents: sha256:seeded
 drift (up and exec refuse this; status does not):
-  - no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted
+  no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted
 
 ports:
   - 127.0.0.1:8080 -> guest 80
