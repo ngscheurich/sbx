@@ -33,13 +33,13 @@ target = "/root/.pi/agent/sessions"
 [[mounts]]
 type = "bind"
 source = "~/.pi/agent/skills"
-target = "/root/.pi/skills"
+target = "/root/.pi/agent/skills"
 read_only = true
 
 [[mounts]]
 type = "bind"
 source = "~/.pi/agent/extensions"
-target = "/root/.pi/extensions"
+target = "/root/.pi/agent/extensions"
 read_only = true
 
 [[mounts]]
