@@ -85,7 +85,7 @@ func fixtureRepoFrom(t *testing.T, fixture string) string {
 	worktree := filepath.Join(t.TempDir(), "wt1")
 	git(t, repo, "worktree", "add", worktree, "-b", "feature")
 	copyFixture(t, fixture, worktree)
-	return worktree
+	return resolve(t, worktree)
 }
 
 // fixtureRestrictedDir is the restricted CLI fixture's path relative to this

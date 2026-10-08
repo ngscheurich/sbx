@@ -188,14 +188,10 @@ func TestExecArgvAndStreams(t *testing.T) {
 func TestExecUsesTtyOnTerminalStdin(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_EXEC_NO_STDIN_READ", "1") // a PTY master never EOFs
-	ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
-	if err != nil {
-		t.Skipf("no pty available: %v", err)
-	}
-	t.Cleanup(func() { ptmx.Close() })
+	pty := openPTY(t)
 
 	box := CLI{}
-	code, err := box.Exec(context.Background(), "box", "/workspace", []string{"ls"}, ptmx, nil, nil)
+	code, err := box.Exec(context.Background(), "box", "/workspace", []string{"ls"}, pty, nil, nil)
 	if err != nil || code != 0 {
 		t.Fatalf("exec: code=%d err=%v", code, err)
 	}

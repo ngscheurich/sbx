@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ngscheurich/sbx/internal/gitx"
 	"github.com/ngscheurich/sbx/internal/identity"
@@ -15,6 +16,21 @@ import (
 
 // fixtureRepo creates a temporary Git repository with a linked worktree
 // holding an sbx.toml, and returns the worktree path and the repository path.
+func TestMain(m *testing.M) {
+	// Pin the local zone before any test runs. t.Setenv inside a test is
+	// too late: the time package reads TZ exactly once, the first time
+	// anything formats a local time, so an earlier test would freeze the
+	// host's zone for the rest of the process. macOS is worse still — the
+	// local zone can be initialized before TestMain even runs, so the env
+	// var alone does not decide it. Assigning the Local pointer directly
+	// cannot be undone by init order; the env var keeps subprocesses (the
+	// fakes) consistent with us. List goldens pin UTC formatting, which
+	// only holds if UTC is the process zone throughout.
+	os.Setenv("TZ", "UTC")
+	time.Local = time.UTC
+	os.Exit(m.Run())
+}
+
 func fixtureRepo(t *testing.T, toml string) (worktree, repo string) {
 	t.Helper()
 	repo = t.TempDir()
@@ -30,7 +46,25 @@ func fixtureRepo(t *testing.T, toml string) (worktree, repo string) {
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return worktree, repo
+	return resolve(t, worktree), resolve(t, repo)
+}
+
+// resolve returns the absolute, symlink-free form of path — the same form
+// gitx.Discover is required to produce, so argv expectations built from a
+// fixture's paths match what sbx records. On macOS the temporary directory
+// itself sits behind the /private symlink, so raw t.TempDir paths never
+// match directly.
+func resolve(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, err := filepath.Abs(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
 }
 
 func git(t *testing.T, dir string, args ...string) {
