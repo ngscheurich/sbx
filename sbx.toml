@@ -53,3 +53,6 @@ read_only = true
 
 [network]
 policy = "public"
+
+[aliases]
+pi = "exec -- pi"
