@@ -69,16 +69,22 @@ func (o *output) usagef(format string, args ...any) int {
 	return exitUsage
 }
 
+// helpFlags are the top-level flags help lists, in help order.
+var helpFlags = []struct{ flags, summary string }{
+	{"-h, --help", "Show this help and exit"},
+	{"-V, --version", "Show the version and exit"},
+}
+
 // helpCommands are the top-level commands help lists, in help order.
 var helpCommands = []struct{ name, summary string }{
-	{"plan", "Show what sbx would create for this worktree’s sandbox"},
+	{"plan", "Show what sandbox would be created for this worktree"},
 	{"build", "Build this project’s image and register it with the backend"},
-	{"run", "Run a one-off guest command in a disposable sandbox"},
-	{"up", "Create or start this worktree’s sandbox"},
+	{"run", "Run a one-off command in a disposable sandbox"},
+	{"up", "Create or start the sandbox"},
 	{"exec", "Run a guest command in the sandbox (creating/starting if needed)"},
 	{"status", "Show the sandbox’s identity, state, and drift"},
 	{"logs", "Show the sandbox’s logs"},
-	{"stop", "Stop persistent sandbox, keeping its state and volumes"},
+	{"stop", "Stop the sandbox, keeping its state and volumes"},
 	{"rm", "Remove the sandbox (requires confirmation)"},
 	{"port", "Manage sandbox ports"},
 }
@@ -88,7 +94,7 @@ var helpCommands = []struct{ name, summary string }{
 // to the pre-styling help text, pinned by testdata/help.txt.
 func renderHelp(st ui.Styles) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, "sbx — worktree-scoped local development sandboxes")
+	fmt.Fprintln(&b, "Worktree-scoped local development sandboxes")
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Usage:"))
 	fmt.Fprintln(&b, "  sbx <command> [flags]")
@@ -100,7 +106,13 @@ func renderHelp(st ui.Styles) string {
 		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(c.name), strings.Repeat(" ", 6-len(c.name)), c.summary)
 	}
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Run sbx from any directory inside a Git worktree that has an sbx.toml.")
+	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Flags:"))
+	for _, f := range helpFlags {
+		// Same layout as Commands: the flag renders bold, its column
+		// padding stays outside the style so Plain output keeps exact
+		// spacing.
+		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(f.flags), strings.Repeat(" ", 13-len(f.flags)), f.summary)
+	}
 	return b.String()
 }
 
