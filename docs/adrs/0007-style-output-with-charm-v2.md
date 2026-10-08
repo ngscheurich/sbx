@@ -4,4 +4,6 @@ sbx styles its own user-facing output — the plan and status reports, help, and
 
 The explicit `--plain` flag that guide calls the accessibility lever is deferred: under writer-bound profiles it strips nothing today. It ships with the first non-color decoration (border, glyph, or in-place redraw), tracked as `.tracker/output-styling/issues/03-plain-lever.md`.
 
+Update: the trigger arrived as predicted. The drift report's bordered table became sbx's shared table style (`ui.Table`), drawn by `sbx list` as well, and `--plain` (alias `--no-color`) shipped in the same change: it forces the fully-stripping writer profile and drops table borders, so a reader who asks for no decoration gets none at a terminal either.
+
 Revisit if a non-color decoration lands before `--plain` does, or if Lip Gloss v2's profile detection proves unable to honor an environment the guide requires.

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/translate"
 )
@@ -108,22 +109,23 @@ func TestDriftReportsDifferences(t *testing.T) {
 
 	changed := DefinitionOf(fakeTranslation("/repo/wt", "4G"))
 	drift := Drift(created, changed, "sha256:fake")
-	if len(drift) != 1 || !strings.Contains(drift[0], "memory") ||
-		!strings.Contains(drift[0], "2G") || !strings.Contains(drift[0], "4G") {
-		t.Errorf("memory drift not reported with both values: %v", drift)
+	if len(drift) != 1 || drift[0].Setting != "memory" ||
+		!strings.Contains(drift[0].Was, "2G") || !strings.Contains(drift[0].Now, "4G") {
+		t.Errorf("memory drift not reported with both values: %+v", drift)
 	}
 
 	// The image tag resolving to different contents is drift even though
 	// nothing in sbx.toml changed.
 	drift = Drift(created, current, "sha256:rebuilt")
-	if len(drift) != 1 || !strings.Contains(drift[0], "sha256:fake") || !strings.Contains(drift[0], "sha256:rebuilt") {
-		t.Errorf("digest drift not reported: %v", drift)
+	if len(drift) != 1 || drift[0].Setting != "image contents" ||
+		drift[0].Was != "sha256:fake" || drift[0].Now != "sha256:rebuilt" {
+		t.Errorf("digest drift not reported: %+v", drift)
 	}
 
 	// An unresolvable image cannot be confirmed and fails closed.
 	drift = Drift(created, current, "")
-	if len(drift) != 1 || !strings.Contains(drift[0], "could not") {
-		t.Errorf("unresolvable image not reported: %v", drift)
+	if len(drift) != 1 || !strings.Contains(drift[0].Now, "could not") {
+		t.Errorf("unresolvable image not reported: %+v", drift)
 	}
 
 	// Labels carry the Sandbox identity (name, mode, worktree), not
@@ -140,8 +142,8 @@ func TestDriftReportsDifferences(t *testing.T) {
 	other := DefinitionOf(fakeTranslation("/repo/wt", "2G"))
 	other.SecretConfYAML = strings.Replace(other.SecretConfYAML, "example.com", "other.example.com", 1)
 	drift = Drift(created, other, "sha256:fake")
-	if len(drift) != 1 || !strings.Contains(drift[0], "secret") {
-		t.Errorf("secret map drift not reported: %v", drift)
+	if len(drift) != 1 || !strings.Contains(drift[0].Setting, "secret") {
+		t.Errorf("secret map drift not reported: %+v", drift)
 	}
 }
 
@@ -153,27 +155,27 @@ func TestDriftReportsEveryAspect(t *testing.T) {
 
 	mounts := DefinitionOf(fakeTranslation("/repo/wt", "2G"))
 	mounts.Options.Mounts = append(mounts.Options.Mounts, msb.Mount{Source: "/repo/notes", Target: "/mnt/notes", ReadOnly: true})
-	if drift := Drift(created, mounts, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0], "mounts") {
-		t.Errorf("mount drift not reported: %v", drift)
+	if drift := Drift(created, mounts, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0].Setting, "mounts") {
+		t.Errorf("mount drift not reported: %+v", drift)
 	}
 
 	owned := DefinitionOf(fakeTranslation("/repo/wt", "2G"))
 	owned.Options.Owned = []msb.OwnedMount{{Target: "/scratch", Kind: "dir"}}
-	if drift := Drift(created, owned, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0], "volumes") {
-		t.Errorf("sandbox-volume drift not reported: %v", drift)
+	if drift := Drift(created, owned, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0].Setting, "volumes") {
+		t.Errorf("sandbox-volume drift not reported: %+v", drift)
 	}
 
 	env := DefinitionOf(fakeTranslation("/repo/wt", "2G"))
 	env.Options.Env = []string{"MODE=test"}
-	if drift := Drift(created, env, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0], "environment") {
-		t.Errorf("environment drift not reported: %v", drift)
+	if drift := Drift(created, env, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0].Setting, "environment") {
+		t.Errorf("environment drift not reported: %+v", drift)
 	}
 
 	net := DefinitionOf(fakeTranslation("/repo/wt", "2G"))
 	net.Options.NetRules = []string{"allow@example.com"}
 	net.Options.TLSIntercept = true
-	if drift := Drift(created, net, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0], "network") {
-		t.Errorf("network drift not reported: %v", drift)
+	if drift := Drift(created, net, "sha256:fake"); len(drift) != 1 || !strings.Contains(drift[0].Setting, "network") {
+		t.Errorf("network drift not reported: %+v", drift)
 	}
 
 	// Multiple changes surface as multiple lines, in a stable order.
@@ -181,7 +183,63 @@ func TestDriftReportsEveryAspect(t *testing.T) {
 	all.Options.Env = []string{"MODE=test"}
 	all.Options.Owned = []msb.OwnedMount{{Target: "/scratch", Kind: "dir"}}
 	if drift := Drift(created, all, "sha256:fake"); len(drift) != 3 {
-		t.Errorf("want 3 drift lines, got %v", drift)
+		t.Errorf("want 3 drift entries, got %+v", drift)
+	}
+}
+
+// TestRenderDriftIsATable checks the table rendering: a bordered table
+// whose data rows carry the entry name, the creation-time value, and the
+// current value in shared columns.
+func TestRenderDriftIsATable(t *testing.T) {
+	entries := []DriftEntry{
+		{Setting: "environment.PHX_BIND_ALL", Was: "1", Now: "removed"},
+		{Setting: "memory", Was: "2G", Now: "4G"},
+	}
+	got := RenderDrift(entries, "", false)
+	for _, want := range []string{
+		"┌",
+		"│ environment.PHX_BIND_ALL │ 1           │ removed               │",
+		"│ memory                   │ 2G          │ 4G                    │",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered table is missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "setting") || !strings.Contains(got, "at creation") || !strings.Contains(got, "current configuration") {
+		t.Errorf("rendered table lacks the headers:\n%s", got)
+	}
+	if got := RenderDrift(nil, "  ", false); got != "" {
+		t.Errorf("rendering no entries produced %q", got)
+	}
+}
+
+// TestRenderDriftPlainDropsBorders checks the --plain lever at the drift
+// table: no border glyphs, every word kept.
+func TestRenderDriftPlainDropsBorders(t *testing.T) {
+	entries := []DriftEntry{{Setting: "memory", Was: "2G", Now: "4G"}}
+	got := RenderDrift(entries, "", true)
+	if strings.ContainsAny(got, "┌┬┐│├┼┤└┴┘─") {
+		t.Errorf("plain drift table kept border glyphs:\n%s", got)
+	}
+	for _, want := range []string{"memory", "2G", "4G", "setting", "at creation", "current configuration"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("plain drift table lost the word %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestRenderDriftWrapsLongValues checks that a value wider than the
+// column cap wraps within its cell instead of widening the table.
+func TestRenderDriftWrapsLongValues(t *testing.T) {
+	long := strings.Repeat("word ", 30)
+	got := RenderDrift([]DriftEntry{{Setting: "environment.LONG", Was: long, Now: "removed"}}, "", false)
+	if !strings.Contains(got, "word \n") && !strings.Contains(got, "word ") {
+		t.Fatalf("table lost the wrapped value:\n%s", got)
+	}
+	for _, line := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
+		if w := lipgloss.Width(line); w > 2+driftValueCap+2+driftValueCap+2+30+10 {
+			t.Errorf("table line exceeds the wrapped width: %q", line)
+		}
 	}
 }
 

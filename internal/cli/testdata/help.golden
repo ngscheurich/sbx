@@ -17,4 +17,5 @@ Commands:
 
 Flags:
   -h, --help     Show this help and exit
+  --plain        Drop all decoration: color, bold, borders (alias --no-color)
   -V, --version  Show the version and exit

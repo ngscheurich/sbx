@@ -24,8 +24,8 @@ import (
 func renderPlain(t *testing.T, p Plan) string {
 	t.Helper()
 	var buf bytes.Buffer
-	out, _, styles := ui.Writers(&buf, io.Discard)
-	fmt.Fprint(out, p.Render(styles))
+	out, _, styles := ui.Writers(&buf, io.Discard, false)
+	fmt.Fprint(out, p.Render(styles, false))
 	return buf.String()
 }
 

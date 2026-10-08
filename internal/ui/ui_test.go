@@ -29,7 +29,7 @@ const plainLine = "sandbox: creation drift: none warning: the port registry coul
 // output: every escape stripped, words untouched.
 func TestWritersStripAllDecorationFromABuffer(t *testing.T) {
 	var buf bytes.Buffer
-	out, _, st := Writers(&buf, io.Discard)
+	out, _, st := Writers(&buf, io.Discard, false)
 	fmt.Fprint(out, styledLine(st))
 	if got := buf.String(); got != plainLine {
 		t.Errorf("buffer received %q, want the plain bytes %q", got, plainLine)
@@ -45,7 +45,7 @@ func TestWritersStripAllDecorationFromABuffer(t *testing.T) {
 func TestWritersKeepDecorationWhenColorIsForced(t *testing.T) {
 	t.Setenv("CLICOLOR_FORCE", "1")
 	var buf bytes.Buffer
-	out, _, st := Writers(&buf, io.Discard)
+	out, _, st := Writers(&buf, io.Discard, false)
 	fmt.Fprint(out, styledLine(st))
 	got := buf.String()
 	if !strings.Contains(got, "\x1b[") {
@@ -66,10 +66,47 @@ func TestWritersStripAllDecorationUnderNoColorAtATerminal(t *testing.T) {
 	t.Setenv("TTY_FORCE", "1") // colorprofile's knob: treat the writer as a terminal
 	t.Setenv("NO_COLOR", "1")
 	var buf bytes.Buffer
-	out, _, st := Writers(&buf, io.Discard)
+	out, _, st := Writers(&buf, io.Discard, false)
 	fmt.Fprint(out, styledLine(st))
 	if got := buf.String(); got != plainLine {
 		t.Errorf("NO_COLOR at a terminal produced %q, want the plain bytes %q", got, plainLine)
+	}
+}
+
+// TestWritersStripAllDecorationWhenPlain pins the --plain accessibility
+// lever at the writer seam: it forces the fully-stripping profile even
+// where the environment forces color, so a reader who asked for no
+// decoration gets none at a terminal either.
+func TestWritersStripAllDecorationWhenPlain(t *testing.T) {
+	t.Setenv("TTY_FORCE", "1")
+	t.Setenv("CLICOLOR_FORCE", "1")
+	var buf bytes.Buffer
+	out, _, st := Writers(&buf, io.Discard, true)
+	fmt.Fprint(out, styledLine(st))
+	if got := buf.String(); got != plainLine {
+		t.Errorf("--plain at a forced-color terminal produced %q, want the plain bytes %q", got, plainLine)
+	}
+}
+
+// TestTablePlainDropsBorders pins the one non-color decoration sbx
+// renders: a bordered table at a terminal, and the same words without the
+// border glyphs under --plain. Alignment survives: the empty border keeps
+// the cell padding.
+func TestTablePlainDropsBorders(t *testing.T) {
+	headers := []string{"name", "status"}
+	rows := [][]string{{"demo", "Running"}}
+	bordered := Table(false, headers, rows)
+	if !strings.Contains(bordered, "┌") || !strings.Contains(bordered, "│") {
+		t.Errorf("table rendered without borders:\n%s", bordered)
+	}
+	plainTbl := Table(true, headers, rows)
+	if strings.ContainsAny(plainTbl, "┌┬┐│├┼┤└┴┘─") {
+		t.Errorf("plain table kept border glyphs:\n%s", plainTbl)
+	}
+	for _, want := range []string{"name", "status", "demo", "Running"} {
+		if !strings.Contains(plainTbl, want) {
+			t.Errorf("plain table lost the word %q:\n%s", want, plainTbl)
+		}
 	}
 }
 
@@ -81,7 +118,7 @@ func TestWritersTreatEmptyNoColorAsUnset(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("CLICOLOR_FORCE", "1")
 	var buf bytes.Buffer
-	out, _, st := Writers(&buf, io.Discard)
+	out, _, st := Writers(&buf, io.Discard, false)
 	fmt.Fprint(out, styledLine(st))
 	if !strings.Contains(buf.String(), "\x1b[") {
 		t.Errorf("empty NO_COLOR stripped the forced color: %q", buf.String())

@@ -171,14 +171,14 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 	}
 	tr.Options.Name = id.Sandbox
 	p.tr = tr
-	drift, err := driftReport(ctx, box, p)
+	notes, entries, err := driftReport(ctx, box, p)
 	if err != nil {
 		return out.fail(err)
 	}
-	if len(drift) == 0 {
+	if len(notes) == 0 && len(entries) == 0 {
 		fmt.Fprintf(out.stdout, "%s\n", out.styles.Positive.Render("drift: none"))
 	} else {
-		fmt.Fprintf(out.stdout, "%s\n%s\n", out.styles.Heading.Render("drift (up and exec refuse this; status does not):"), renderDrift(drift))
+		fmt.Fprintf(out.stdout, "%s\n%s\n", out.styles.Heading.Render("drift (up and exec refuse this; status does not):"), renderDrift(out, notes, entries))
 	}
 
 	// Published ports are reported read-only: what the backend says, and
@@ -522,15 +522,15 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		return "", bootstrapNotDeclared, err
 	}
 
-	drift, err := driftReport(ctx, box, p)
+	notes, entries, err := driftReport(ctx, box, p)
 	if err != nil {
 		return "", bootstrapNotDeclared, err
 	}
-	if len(drift) > 0 {
+	if len(notes) > 0 || len(entries) > 0 {
 		if !allowStale {
-			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\n\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(drift))
+			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(out, notes, entries))
 		}
-		fmt.Fprintf(out.stderr, "%s using %s despite drift:\n%s", out.styles.Warning.Render("warning:"), p.id.Sandbox, renderDrift(drift))
+		fmt.Fprintf(out.stderr, "%s using %s despite drift:\n%s", out.styles.Warning.Render("warning:"), p.id.Sandbox, renderDrift(out, notes, entries))
 	}
 
 	// Even with --allow-stale, the sandbox's own image must have passed
@@ -592,19 +592,21 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 // configuration. A missing snapshot counts as drift; a corrupt one is an
 // error, never silently treated as a match. The current image digest comes
 // from msb, and an image that cannot be inspected fails closed as drift.
-func driftReport(ctx context.Context, box msb.CLI, p *persistent) ([]string, error) {
+// A finding that is not an old/new pair, such as the missing snapshot,
+// comes back as a note; every other difference is a DriftEntry.
+func driftReport(ctx context.Context, box msb.CLI, p *persistent) (notes []string, entries []state.DriftEntry, err error) {
 	snap, err := state.LoadSnapshot(p.id.Sandbox)
 	if errors.Is(err, state.ErrNoSnapshot) {
-		return []string{"no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted"}, nil
+		return []string{"no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted"}, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	digest := ""
 	if info, err := box.ImageInspect(ctx, p.cfg.Image); err == nil {
 		digest = info.ManifestDigest
 	}
-	return state.Drift(snap, state.DefinitionOf(p.tr), digest), nil
+	return nil, state.Drift(snap, state.DefinitionOf(p.tr), digest), nil
 }
 
 // findSandbox locates the named sandbox in the backend's listing. A
@@ -687,12 +689,16 @@ func materializeGeneratedFiles(tr *translate.Translation) (func(), error) {
 	}, nil
 }
 
-// renderDrift formats drift lines for an error or report.
-func renderDrift(drift []string) string {
+// renderDrift formats drift for an error or report: any standalone notes
+// first, then the changed settings as a table with the creation-time value
+// on the left and the current value on the right. A plain output (the
+// --plain lever) drops the table's borders, never its words.
+func renderDrift(out *output, notes []string, entries []state.DriftEntry) string {
 	var b strings.Builder
-	for _, d := range drift {
-		fmt.Fprintf(&b, "  - %s\n", d)
+	for _, n := range notes {
+		fmt.Fprintf(&b, "  %s\n", n)
 	}
+	b.WriteString(state.RenderDrift(entries, "  ", out.plain))
 	return b.String()
 }
 

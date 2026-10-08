@@ -11,6 +11,7 @@ import (
 	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/msb"
 	"github.com/ngscheurich/sbx/internal/ports"
+	"github.com/ngscheurich/sbx/internal/state"
 	"github.com/ngscheurich/sbx/internal/translate"
 	"github.com/ngscheurich/sbx/internal/ui"
 	"github.com/ngscheurich/sbx/internal/volumes"
@@ -80,10 +81,15 @@ type LiveReport struct {
 	InspectErr error
 	// Owned reports whether the sandbox carries sbx's managed label.
 	Owned bool
-	// Drift is the Creation-drift report for the owned sandbox; empty when
-	// the creation snapshot matches the current configuration. Reported
-	// here without blocking anything: the plan stays usable on drift.
-	Drift []string
+	// Drift is the Creation-drift report for the owned sandbox: one entry
+	// per changed setting, with the creation-time value on the left and
+	// the current value on the right. Empty when the creation snapshot
+	// matches the current configuration. Reported here without blocking
+	// anything: the plan stays usable on drift.
+	Drift []state.DriftEntry
+	// DriftNotes are standalone drift findings that are not old/new pairs,
+	// such as a missing creation snapshot.
+	DriftNotes []string
 	// DriftErr records a failed drift evaluation, reported rather than
 	// guessed.
 	DriftErr error
@@ -173,9 +179,10 @@ const (
 // given styles: the header and section headings bold, positive states and
 // warnings colored. There is one rendering path — Plain output is these
 // same bytes through an Ascii-profile writer (ui.Writers), which strips
-// the decoration. The output is deterministic and contains no secret
-// values.
-func (p Plan) Render(st ui.Styles) string {
+// the decoration. plain is the --plain accessibility lever: the drift
+// table renders without borders on top of the stripped decoration. The
+// output is deterministic and contains no secret values.
+func (p Plan) Render(st ui.Styles, plain bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", st.Heading.Render("sbx plan — preview of the persistent sandbox for this worktree"))
 	fmt.Fprintf(&b, "project:          %s\n", p.Project)
@@ -305,7 +312,7 @@ func (p Plan) Render(st ui.Styles) string {
 	fmt.Fprintf(&b, "\n%s\n", st.Heading.Render("msb arguments at creation:"))
 	fmt.Fprintf(&b, "  msb create %s\n", quoteArgs(msb.CreateArgs(tr.Options)))
 
-	p.renderLive(&b, st)
+	p.renderLive(&b, st, plain)
 
 	fmt.Fprintf(&b, "\nsbx changed nothing: no sandbox was created and no host or project\nstate was written.\n")
 	return b.String()
@@ -316,7 +323,7 @@ func (p Plan) Render(st ui.Styles) string {
 // state, and port discrepancies are reported here exactly as status
 // reports them, never enforced or corrected, so the plan stays usable
 // when the sandbox has drifted.
-func (p Plan) renderLive(b *strings.Builder, st ui.Styles) {
+func (p Plan) renderLive(b *strings.Builder, st ui.Styles, plain bool) {
 	if p.Live == nil {
 		return
 	}
@@ -337,13 +344,14 @@ func (p Plan) renderLive(b *strings.Builder, st ui.Styles) {
 	switch {
 	case p.Live.DriftErr != nil:
 		fmt.Fprintf(b, "  %s\n", st.Warning.Render(fmt.Sprintf("creation drift: unknown (%v)", p.Live.DriftErr)))
-	case len(p.Live.Drift) == 0:
+	case len(p.Live.Drift) == 0 && len(p.Live.DriftNotes) == 0:
 		fmt.Fprintf(b, "  %s\n", st.Positive.Render("creation drift: none"))
 	default:
 		fmt.Fprintf(b, "  %s\n", st.Heading.Render("creation drift (up and exec refuse this; the plan does not):"))
-		for _, d := range p.Live.Drift {
-			fmt.Fprintf(b, "    - %s\n", d)
+		for _, n := range p.Live.DriftNotes {
+			fmt.Fprintf(b, "    %s\n", n)
 		}
+		b.WriteString(state.RenderDrift(p.Live.Drift, "    ", plain))
 	}
 	switch p.Live.Bootstrap {
 	case "":

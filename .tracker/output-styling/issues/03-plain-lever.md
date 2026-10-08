@@ -1,6 +1,6 @@
 # The `--plain` lever
 
-Status: needs-triage
+Status: resolved
 
 ## Goal
 
@@ -16,3 +16,16 @@ This issue is therefore blocked on that trigger condition, not on priority. When
 
 - `--plain` at a TTY produces output byte-identical to piped output.
 - The flag is documented in `accessibility.md`'s degrade-by-destination section as the accessibility lever, and in help.
+
+## Comments
+
+Implemented with the trigger that unblocked it: the drift table's bordered
+rendering became the shared `ui.Table` (drawn by `sbx list` too), and
+`--plain` — alias `--no-color`, leading the command line — shipped in the
+same change. It forces the NoTTY writer profile (dropping color and bold
+even under `CLICOLOR_FORCE`) and renderers drop table borders. Pinned by
+`TestWritersStripAllDecorationWhenPlain`, `TestTablePlainDropsBorders`,
+`TestPlainListPlainGolden`, and `testdata/list-plain.golden`; documented in
+`accessibility.md`, top-level help, and an update note in ADR-0007. The
+pipers' guarantee is unchanged: without the flag, a pipe never receives
+ANSI, and border glyphs are content in both destinations.

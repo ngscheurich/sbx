@@ -39,18 +39,23 @@ type output struct {
 	rawOut io.Writer // raw stdout for subprocess stdio pass-through
 	rawErr io.Writer // raw stderr for subprocess stdio pass-through
 	styles ui.Styles
+	// plain records the --plain accessibility lever: renderers drop
+	// non-color decoration (table borders) on top of what the forced
+	// NoTTY profile already strips.
+	plain bool
 }
 
 // newOutput wraps the writers Run received: the one place sbx's output
 // seam is applied.
-func newOutput(stdout, stderr io.Writer) *output {
-	styledOut, styledErr, styles := ui.Writers(stdout, stderr)
+func newOutput(stdout, stderr io.Writer, plain bool) *output {
+	styledOut, styledErr, styles := ui.Writers(stdout, stderr, plain)
 	return &output{
 		stdout: styledOut,
 		stderr: styledErr,
 		rawOut: stdout,
 		rawErr: stderr,
 		styles: styles,
+		plain:  plain,
 	}
 }
 
@@ -72,6 +77,7 @@ func (o *output) usagef(format string, args ...any) int {
 // helpFlags are the top-level flags help lists, in help order.
 var helpFlags = []struct{ flags, summary string }{
 	{"-h, --help", "Show this help and exit"},
+	{"--plain", "Drop all decoration: color, bold, borders (alias --no-color)"},
 	{"-V, --version", "Show the version and exit"},
 }
 
@@ -135,7 +141,16 @@ func renderPortHelp(st ui.Styles) string {
 // context carries cancellation (sbx forwards it to the running guest) and
 // stdin is passed through to guest commands.
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	out := newOutput(stdout, stderr)
+	// --plain (alias --no-color) is a global flag and leads the command
+	// line, before the command name; a token after the command belongs to
+	// that command, and past exec's `--` separator even `--plain` is a
+	// guest argument, so it is never stripped there.
+	plain := false
+	for len(args) > 0 && (args[0] == "--plain" || args[0] == "--no-color") {
+		plain = true
+		args = args[1:]
+	}
+	out := newOutput(stdout, stderr, plain)
 	if len(args) == 0 {
 		fmt.Fprint(out.stdout, renderHelp(out.styles))
 		return exitOK
@@ -194,7 +209,7 @@ func runPlan(ctx context.Context, out *output) int {
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
 	checkPlanPorts(&p)
 	checkPlanLive(ctx, msb.CLI{}, info, cfg, &p)
-	fmt.Fprint(out.stdout, p.Render(out.styles))
+	fmt.Fprint(out.stdout, p.Render(out.styles, out.plain))
 	return exitOK
 }
 
@@ -288,11 +303,12 @@ func checkPlanLive(ctx context.Context, box msb.CLI, info gitx.Info, cfg config.
 		return
 	}
 	ip := &persistent{info: info, cfg: cfg, id: identity.Identity{Sandbox: p.Sandbox}, tr: p.Translation}
-	drift, err := driftReport(ctx, box, ip)
+	notes, entries, err := driftReport(ctx, box, ip)
 	if err != nil {
 		live.DriftErr = err
 	} else {
-		live.Drift = drift
+		live.DriftNotes = notes
+		live.Drift = entries
 	}
 	boot, err := assessBootstrap(ip, s.CreatedAt)
 	switch boot {

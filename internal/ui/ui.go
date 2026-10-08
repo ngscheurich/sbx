@@ -62,8 +62,10 @@ func NewStyles() Styles {
 // terminal must yield ANSI-free bytes, while colorprofile's Ascii profile
 // keeps bold as text decoration. NO_COLOR therefore forces the
 // fully-stripping NoTTY profile, following no-color.org's rule that any
-// non-empty value counts.
-func Writers(stdout, stderr io.Writer) (io.Writer, io.Writer, Styles) {
+// non-empty value counts. plain -- the --plain accessibility lever —
+// forces the same profile regardless of the environment, so decoration
+// never reaches a reader who asked for none.
+func Writers(stdout, stderr io.Writer, plain bool) (io.Writer, io.Writer, Styles) {
 	// os.Environ() is passed explicitly: colorprofile.NewWriter documents a
 	// nil environ as "use os.Environ()" but v0.4.3 reads it as empty, and
 	// an empty environment is a dumb terminal — every profile knob
@@ -71,7 +73,7 @@ func Writers(stdout, stderr io.Writer) (io.Writer, io.Writer, Styles) {
 	env := os.Environ()
 	out := colorprofile.NewWriter(stdout, env)
 	errs := colorprofile.NewWriter(stderr, env)
-	if os.Getenv("NO_COLOR") != "" {
+	if plain || os.Getenv("NO_COLOR") != "" {
 		out.Profile = colorprofile.NoTTY
 		errs.Profile = colorprofile.NoTTY
 	}
