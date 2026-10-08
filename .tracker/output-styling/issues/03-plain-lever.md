@@ -21,8 +21,8 @@ This issue is therefore blocked on that trigger condition, not on priority. When
 
 Implemented with the trigger that unblocked it: the drift table's bordered
 rendering became the shared `ui.Table` (drawn by `sbx list` too), and
-`--plain` — alias `--no-color`, leading the command line — shipped in the
-same change. It forces the NoTTY writer profile (dropping color and bold
+`--plain` — short form `-p`, alias `--no-color`, leading the command
+line — shipped in the same change. It forces the NoTTY writer profile (dropping color and bold
 even under `CLICOLOR_FORCE`) and renderers drop table borders. Pinned by
 `TestWritersStripAllDecorationWhenPlain`, `TestTablePlainDropsBorders`,
 `TestPlainListPlainGolden`, and `testdata/list-plain.golden`; documented in

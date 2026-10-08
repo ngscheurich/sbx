@@ -77,7 +77,7 @@ func (o *output) usagef(format string, args ...any) int {
 // helpFlags are the top-level flags help lists, in help order.
 var helpFlags = []struct{ flags, summary string }{
 	{"-h, --help", "Show this help and exit"},
-	{"--plain", "Drop all decoration: color, bold, borders (alias --no-color)"},
+	{"-p, --plain", "Drop all decoration: color, bold, borders (alias --no-color)"},
 	{"-V, --version", "Show the version and exit"},
 }
 
@@ -147,9 +147,17 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	// that command, and past exec's `--` separator even `--plain` is a
 	// guest argument, so it is never stripped there.
 	plain := false
-	for len(args) > 0 && (args[0] == "--plain" || args[0] == "--no-color") {
-		plain = true
-		args = args[1:]
+loop:
+	for len(args) > 0 {
+		switch args[0] {
+		case "-p", "--plain", "--no-color":
+			plain = true
+			args = args[1:]
+		default:
+			// The first token that is not the plain lever starts the
+			// command, whose own parser owns the rest.
+			break loop
+		}
 	}
 	out := newOutput(stdout, stderr, plain)
 	if len(args) == 0 {

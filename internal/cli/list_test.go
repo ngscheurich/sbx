@@ -68,20 +68,22 @@ func TestPlainListPlainGolden(t *testing.T) {
 	testsupport.Golden(t, "testdata/list-plain.golden", stdout.Bytes())
 }
 
-// TestPlainListAlias pins the documented alias: --no-color is the same
-// lever, byte-for-byte.
+// TestPlainListAlias pins the documented alias and the short form:
+// --no-color and -p are the same lever as --plain, byte-for-byte.
 func TestPlainListAlias(t *testing.T) {
 	t.Setenv("TZ", "UTC")
 	t.Setenv("CLICOLOR_FORCE", "1")
 	fake := testsupport.FakeMSB(t)
 	fake.SeedSandbox(t, "proj-b-feat-x-ab12cd", "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
-	var stdout, stderr bytes.Buffer
-	if code := Run(context.Background(), []string{"--no-color", "list"}, nil, &stdout, &stderr); code != 0 {
-		t.Fatalf("exit code = %d (stderr: %s)", code, stderr.String())
-	}
 	want, err := os.ReadFile("testdata/list-plain.golden")
-	if err != nil || !bytes.Equal(stdout.Bytes(), want) {
-		t.Errorf("--no-color output differs from --plain (err: %v)\ngot:\n%swant:\n%s", err, stdout.String(), want)
+	for _, flag := range []string{"--no-color", "-p"} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(context.Background(), []string{flag, "list"}, nil, &stdout, &stderr); code != 0 {
+			t.Fatalf("%s: exit code = %d (stderr: %s)", flag, code, stderr.String())
+		}
+		if err != nil || !bytes.Equal(stdout.Bytes(), want) {
+			t.Errorf("%s output differs from --plain (err: %v)\ngot:\n%swant:\n%s", flag, err, stdout.String(), want)
+		}
 	}
 }
 
