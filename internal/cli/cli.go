@@ -176,7 +176,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return runPortPrune(ctx, args, out)
 	case "-V", "--version", "version":
-		fmt.Fprintln(out.stdout, "sbx (development build)")
+		fmt.Fprintln(out.stdout, currentVersion())
 		return exitOK
 	default:
 		fmt.Fprintf(out.stderr, "%s unknown command %q\n\n%s", out.styles.Error.Render("sbx:"), cmd, renderHelp(out.styles))
