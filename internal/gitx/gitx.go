@@ -30,17 +30,20 @@ func Discover(ctx context.Context, dir string) (Info, error) {
 		return Info{}, fmt.Errorf("resolving %s: %w", dir, err)
 	}
 
-	toplevel, err := gitIn(ctx, abs, "rev-parse", "--show-toplevel")
+	// One rev-parse answers both questions, printing in argument order,
+	// one per line. Every sbx invocation pays this spawn, which macOS
+	// prices an order of magnitude above Linux, so the two queries
+	// deliberately share a subprocess.
+	out, err := gitIn(ctx, abs, "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return Info{}, err
 		}
 		return Info{}, fmt.Errorf("sbx must run inside a Git worktree, but %s is not inside one (%v)", abs, err)
 	}
-
-	commonDir, err := gitIn(ctx, abs, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err != nil {
-		return Info{}, fmt.Errorf("finding the common Git directory for %s: %w", abs, err)
+	toplevel, commonDir, found := strings.Cut(out, "\n")
+	if !found || toplevel == "" || commonDir == "" {
+		return Info{}, fmt.Errorf("git rev-parse in %s answered %q, want the worktree root and the common Git directory", abs, out)
 	}
 
 	info := Info{WorktreeRoot: toplevel, CommonDir: commonDir}
