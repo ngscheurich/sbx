@@ -16,7 +16,7 @@ The decision record is [ADR-0007](../../../docs/adrs/0007-style-output-with-char
   - `sbx:` error prefix — color `1`, bold; the message text stays default.
   - Warnings and Project-volume conflicts — color `3`.
   - Positive states (`reuses the existing volume`, reserved ports, `creation drift: none`) — color `2`.
-  - Section headings (`configuration (sbx.toml):`, `sandbox:`, `existing sandbox:`, `Usage:`, `Commands:`) and the plan header line — bold.
+  - Section headings (`configuration (sbx.toml):`, `sandbox:`, `existing sandbox:`, `Usage:`, `Commands:`) and the plan header line — bold, color `11` (amended by issue 04: bold-only emphasis was a wall of undifferentiated entries; color `3` was already Warning's, so the palette's other yellow, bright `11`, keeps headings and warnings distinct).
   - Everything else — default. No faint/muted anywhere.
 - **`--plain` is deferred, with a recorded trigger.** Under v2 it strips nothing the writer doesn't already, so it ships the day the first non-color decoration (border, glyph, in-place redraw) lands. That trigger is recorded here (issue 03), in ADR-0007, and in `accessibility.md`.
 

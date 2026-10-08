@@ -33,7 +33,10 @@ type Styles struct {
 	// Positive styles positive states such as `creation drift: none` and
 	// `reuses the existing volume`: ANSI color 2.
 	Positive lipgloss.Style
-	// Heading styles section headings and report title lines: bold.
+	// Heading styles section headings and report title lines: bold,
+	// ANSI color 11 (bright yellow). The color speeds up scanning at a
+	// terminal; the words and the bold carry the meaning on their own. It
+	// is deliberately not color 3, which Warning already owns.
 	Heading lipgloss.Style
 	// Command styles command names in help: bold.
 	Command lipgloss.Style
@@ -45,7 +48,7 @@ func NewStyles() Styles {
 		Error:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1")),
 		Warning:  lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
 		Positive: lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		Heading:  lipgloss.NewStyle().Bold(true),
+		Heading:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")),
 		Command:  lipgloss.NewStyle().Bold(true),
 	}
 }

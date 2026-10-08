@@ -90,8 +90,8 @@ func TestWritersTreatEmptyNoColorAsUnset(t *testing.T) {
 
 // TestNewStylesRendersThePalette pins the palette itself: the error prefix
 // is bold and ANSI color 1, warnings color 3, positive states color 2,
-// headings and command names bold — and nothing else. Each styled string
-// must strip back to exactly its text.
+// headings bold in ANSI bright yellow (11), command names bold — and
+// nothing else. Each styled string must strip back to exactly its text.
 func TestNewStylesRendersThePalette(t *testing.T) {
 	st := NewStyles()
 	for _, tc := range []struct {
@@ -103,7 +103,7 @@ func TestNewStylesRendersThePalette(t *testing.T) {
 		{"error prefix", st.Error, "sbx:", []string{"\x1b[1", "31"}},
 		{"warning", st.Warning, "warning:", []string{"33"}},
 		{"positive", st.Positive, "creation drift: none", []string{"32"}},
-		{"heading", st.Heading, "Usage:", []string{"\x1b[1"}},
+		{"heading", st.Heading, "Usage:", []string{"\x1b[1", "93"}},
 		{"command", st.Command, "plan", []string{"\x1b[1"}},
 	} {
 		got := tc.style.Render(tc.text)
