@@ -10,6 +10,7 @@ Commands:
   up      Create or start the sandbox
   exec    Run a guest command in the sandbox (creating/starting if needed)
   status  Show the sandbox’s identity, state, and drift
+  list    List every sbx sandbox on this machine
   logs    Show the sandbox’s logs
   stop    Stop the sandbox, keeping its state and volumes
   rm      Remove the sandbox (requires confirmation)

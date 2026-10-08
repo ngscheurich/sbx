@@ -1,0 +1,5 @@
+# ADR-0008: `sbx list` is backend-global and needs no project configuration
+
+Every sbx command so far starts from the worktree: it discovers the worktree root and loads that checkout's `sbx.toml` before it can talk to the backend. `sbx list` deliberately breaks this pattern. It lists every Owned sandbox the backend holds — across all projects and worktrees, since per-worktree state is already `sbx status`'s job — and so it runs from any directory, inside or outside a Git repository, reading no project configuration. The alternatives were a worktree-scoped list (nearly redundant with `status`) and a raw backend listing (which would surface sandboxes sbx does not own, against the never-adopt rule). Listing Owned sandboxes requires inspecting each backend entry for its attribution label, an N+1 cost `list` accepts because it is not a hot path.
+
+Revisit if a machine-wide command ever needs project context (per-project filtering, Workspace paths); at that point `list` gains an opt-in scope rather than growing a configuration requirement.

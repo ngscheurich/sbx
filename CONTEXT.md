@@ -27,6 +27,14 @@ _Avoid_: Ephemeral run, session
 **Check sandbox**:
 A temporary sandbox that runs an Image check, tied to no worktree and removed afterward.
 
+**Owned sandbox**:
+A sandbox sbx created through the backend, and the only kind sbx inspects, judges, or removes; sbx never adopts a sandbox it did not create.
+_Avoid_: Managed sandbox, except when naming the attribution label
+
+**Alias**:
+A project-configured shorthand for an sbx command line, resolved when the first word of an invocation matches no builtin. Expanding it re-dispatches as if typed; aliases never affect sandbox identity or Creation drift.
+_Avoid_: Shortcut, macro
+
 **Backend**:
 The provider that creates and manages sandboxes; microsandbox is the initial backend.
 
@@ -73,5 +81,5 @@ The ANSI-free bytes sbx writes — what a pipe receives and what a terminal show
 _Avoid_: Raw output, unstyled output
 
 **Styled output**:
-The same content as Plain output with color and emphasis added as decoration; never the only carrier of a meaning that words do not already state.
+The same content as Plain output with decoration — color, emphasis, and table borders — added on top; never the only carrier of a meaning that words do not already state. The `--plain` lever drops every decoration, borders included.
 _Avoid_: Rich output, pretty output

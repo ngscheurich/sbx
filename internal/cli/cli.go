@@ -89,6 +89,7 @@ var helpCommands = []struct{ name, summary string }{
 	{"up", "Create or start the sandbox"},
 	{"exec", "Run a guest command in the sandbox (creating/starting if needed)"},
 	{"status", "Show the sandbox’s identity, state, and drift"},
+	{"list", "List every sbx sandbox on this machine"},
 	{"logs", "Show the sandbox’s logs"},
 	{"stop", "Stop the sandbox, keeping its state and volumes"},
 	{"rm", "Remove the sandbox (requires confirmation)"},
@@ -175,6 +176,11 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runExec(ctx, args, stdin, out)
 	case "status":
 		return runStatus(ctx, args, out)
+	case "list":
+		if len(args) > 1 {
+			return out.usagef("list takes no arguments or flags yet, got %q", strings.Join(args[1:], " "))
+		}
+		return runList(ctx, out)
 	case "logs":
 		return runLogs(ctx, args, out)
 	case "stop":
