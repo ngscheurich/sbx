@@ -3,6 +3,9 @@ cpus = 2
 memory = "2G"
 shell = "/bin/bash"
 
+[build]
+context = "."
+
 [[mounts]]
 type = "bind"
 source = "~/.agents"
