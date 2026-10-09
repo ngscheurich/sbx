@@ -1,8 +1,8 @@
 // Package state holds sbx's host state: the machine-wide host state
 // directory with the creation-time snapshots of persistent sandboxes,
 // Bootstrap completion markers (bootstrap.go), the machine-wide port
-// registry (ports.go), and per-sandbox cross-process locks (lock.go).
-// Image-check successes join in a later release. Snapshots capture what a
+// registry (ports.go), image-check success records (imagecheck.go), and
+// per-sandbox cross-process locks (lock.go). Snapshots capture what a
 // sandbox was
 // created from so sbx can report Creation drift without ever recreating a
 // sandbox that holds private data; markers record a Bootstrap success bound
@@ -29,14 +29,12 @@ import (
 var ErrNoSnapshot = errors.New("no creation-time snapshot")
 
 // Dir returns sbx's host state directory:
-// ${XDG_STATE_HOME:-~/.local/state}/sbx.
+// ${XDG_STATE_HOME:-~/.local/state}/sbx. A relative XDG_STATE_HOME is
+// treated as unset — resolving it against the current directory would
+// scatter machine-wide state wherever the caller happened to stand.
 func Dir() (string, error) {
-	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
-		abs, err := filepath.Abs(xdg)
-		if err != nil {
-			return "", fmt.Errorf("resolving XDG_STATE_HOME %s: %w", xdg, err)
-		}
-		return filepath.Join(abs, "sbx"), nil
+	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" && filepath.IsAbs(xdg) {
+		return filepath.Join(xdg, "sbx"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
