@@ -27,7 +27,7 @@ sandbox:
   secret map passed as --secret-conf:
     TOKEN:
       value: "${SBX_PLAN_TOKEN}"
-      allow: [example.com]
+      allow: ["example.com"]
 
 msb arguments at creation:
   msb create --name app-wt1-cd4c9147 alpine:3.20 --cpus 2 --memory 2G --mount-dir /src/app/wt1:/workspace --mount-named 53ee4efe-cache:/var/cache --env MODE=test --label sbx.managed=1 --label sbx.mode=persistent --label sbx.worktree=/src/app/wt1 --net-rule allow@example.com --tls-intercept --dns-nameserver 1.1.1.1 --secret-conf "<secret map generated at creation>" --fs-conf "<filesystem configuration generated at creation>"

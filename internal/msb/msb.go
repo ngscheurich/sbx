@@ -72,12 +72,16 @@ func (c CLI) run(ctx context.Context, args ...string) (string, error) {
 	cmd.Env = localEnv()
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
+	// A canceled run must not wedge Wait: a leaked child holding the
+	// captured stdout pipe would otherwise block Wait forever after the
+	// interrupt.
+	cmd.WaitDelay = execWaitDelay
 	if err := cmd.Run(); err != nil {
 		detail := strings.TrimSpace(errOut.String())
 		if detail == "" {
 			detail = err.Error()
 		}
-		return out.String(), fmt.Errorf("msb %s: %s", strings.Join(args[:min(2, len(args))], " "), firstLine(detail))
+		return out.String(), fmt.Errorf("msb %s: %s: %w", strings.Join(args[:min(2, len(args))], " "), firstLine(detail), err)
 	}
 	return out.String(), nil
 }
@@ -621,7 +625,6 @@ func (c CLI) Exec(ctx context.Context, name, workdir string, argv []string, stdi
 	args = append(args, "--")
 	args = append(args, argv...)
 	return c.runChild(ctx, args, stdin, stdout, stderr)
-
 }
 
 // runChild runs one msb subprocess attached to the given standard streams
