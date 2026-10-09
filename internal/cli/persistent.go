@@ -233,7 +233,9 @@ func runLogs(ctx context.Context, args []string, out *output) int {
 
 // runStop implements `sbx stop`: stop the persistent sandbox without
 // deleting its state. Stopping touches only an owned sandbox, and drift
-// never blocks it — stopping does not use the sandbox's contents.
+// never blocks it — stopping does not use the sandbox's contents. The
+// per-sandbox lock is held across the inspect-and-stop section so a
+// concurrent up cannot race a creation or bootstrap mid-stop.
 func runStop(ctx context.Context, args []string, out *output) int {
 	if _, err := parsePersistentFlags("stop", args, nil); err != nil {
 		return out.usagef("%v", err)
@@ -246,6 +248,11 @@ func runStop(ctx context.Context, args []string, out *output) int {
 	if _, err := box.LocalContext(ctx); err != nil {
 		return out.fail(err)
 	}
+	lock, err := lockSandbox(id.Sandbox, out.stderr)
+	if err != nil {
+		return out.fail(err)
+	}
+	defer lock.Release()
 	entry, exists, err := findSandbox(ctx, box, id.Sandbox)
 	if err != nil {
 		return out.fail(err)
@@ -275,6 +282,12 @@ func runStop(ctx context.Context, args []string, out *output) int {
 // noninteractive use gives with --yes — remove the persistent sandbox and
 // its Sandbox volumes, list what was lost, and keep Project volumes and
 // port reservations untouched.
+// runRm implements `sbx rm [--yes]`: after confirmation — which
+// noninteractive use gives with --yes — remove the persistent sandbox and
+// its Sandbox volumes, list what was lost, and keep Project volumes and
+// port reservations untouched. The per-sandbox lock is held across the
+// removal and its state cleanup, after the prompt, so an interactive
+// confirmation never blocks a concurrent sbx process.
 func runRm(ctx context.Context, args []string, stdin io.Reader, out *output) int {
 	yes, err := parsePersistentFlags("rm", args, []string{"--yes"})
 	if err != nil {
@@ -315,16 +328,25 @@ func runRm(ctx context.Context, args []string, stdin io.Reader, out *output) int
 		}
 	}
 
-	if err := box.Remove(ctx, id.Sandbox); err != nil {
+	// The lock is taken after the prompt — an interactive confirmation must
+	// never block a concurrent sbx process — and held across the removal
+	// and its state cleanup.
+	lock, err := lockSandbox(id.Sandbox, out.stderr)
+	if err != nil {
 		return out.fail(err)
 	}
-	if err := state.DeleteSnapshot(id.Sandbox); err != nil {
+	defer lock.Release()
+	if err := box.Remove(ctx, id.Sandbox); err != nil {
 		return out.fail(err)
 	}
 	// The Bootstrap marker dies with the sandbox it belongs to, so a later
 	// sandbox of the same identity can never inherit a stale completion.
-	if err := state.DeleteBootstrapMarker(id.Sandbox); err != nil {
-		return out.fail(err)
+	// Both records are attempted even if the first fails: the sandbox is
+	// already gone, so a stray record has no second chance to be cleared.
+	delSnapErr := state.DeleteSnapshot(id.Sandbox)
+	delMarkerErr := state.DeleteBootstrapMarker(id.Sandbox)
+	if delSnapErr != nil || delMarkerErr != nil {
+		return out.fail(errors.Join(delSnapErr, delMarkerErr))
 	}
 
 	fmt.Fprintf(out.stdout, "%s %s\nremoved.\n", out.styles.Heading.Render("persistent sandbox:"), id.Sandbox)
@@ -407,10 +429,13 @@ func preparePersistent(ctx context.Context) (*persistent, error) {
 }
 
 // discoverIdentity resolves just the worktree and its Sandbox identity, for
-// commands that act on an existing sandbox without translating the
-// configuration: logs, stop, and rm.
+// commands that act on an existing sandbox: logs, stop, and rm. The identity
+// is derived from the Git layout alone and never from editable
+// configuration, so a worktree whose sbx.toml is being edited — or is
+// simply invalid — can still stop, log, or remove the sandbox it already
+// has.
 func discoverIdentity(ctx context.Context) (identity.Identity, error) {
-	info, _, err := discoverConfig(ctx)
+	info, err := gitx.Discover(ctx, ".")
 	if err != nil {
 		return identity.Identity{}, err
 	}

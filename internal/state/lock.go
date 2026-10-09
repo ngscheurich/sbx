@@ -1,9 +1,10 @@
 // Per-sandbox cross-process locks: an flock on a lock file in the host
-// state directory serializes persistent create, start, and bootstrap
-// across sbx processes, so a concurrent caller waits rather than racing a
-// creation or running Bootstrap twice. The lock is never held while a
-// user's guest command runs. sbx targets macOS and Linux, so flock(2) is
-// always available.
+// state directory serializes persistent create, start, bootstrap, stop,
+// and remove across sbx processes, so a concurrent caller waits rather
+// than racing a creation, running Bootstrap twice, or stopping a sandbox
+// mid-start. The lock is never held while a user's guest command runs or
+// while an interactive prompt waits for an answer. sbx targets macOS and
+// Linux, so flock(2) is always available.
 package state
 
 import (

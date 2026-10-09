@@ -115,8 +115,9 @@ func incompleteGuidance(sandbox string) string {
 }
 
 // lockSandbox takes the per-sandbox cross-process lock, saying so when
-// another sbx process holds it. The lock serializes create, start, and
-// bootstrap; callers release it before any user guest command runs.
+// another sbx process holds it. The lock serializes create, start,
+// bootstrap, stop, and remove; callers release it before any user guest
+// command runs.
 func lockSandbox(sandbox string, stderr io.Writer) (*state.SandboxLock, error) {
 	lock, held, err := state.TrySandboxLock(sandbox)
 	if err != nil {
@@ -125,7 +126,7 @@ func lockSandbox(sandbox string, stderr io.Writer) (*state.SandboxLock, error) {
 	if held {
 		return lock, nil
 	}
-	fmt.Fprintf(stderr, "sbx: another sbx process is creating, starting, or bootstrapping %s; waiting for it to finish\n", sandbox)
+	fmt.Fprintf(stderr, "sbx: another sbx process is creating, starting, bootstrapping, stopping, or removing %s; waiting for it to finish\n", sandbox)
 	return state.LockSandbox(sandbox)
 }
 
