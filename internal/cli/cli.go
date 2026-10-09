@@ -100,6 +100,16 @@ var helpCommands = []struct{ name, summary string }{
 // bold. Plain output — what a pipe or NO_COLOR receives — is byte-identical
 // to the pre-styling help text, pinned by testdata/help.txt.
 func renderHelp(st ui.Styles) string {
+	// The columns size themselves to their widest entry: a longer command
+	// or flag added later widens the column instead of panicking on a
+	// negative padding count.
+	cmdWidth, flagWidth := 0, 0
+	for _, c := range helpCommands {
+		cmdWidth = max(cmdWidth, len(c.name))
+	}
+	for _, f := range helpFlags {
+		flagWidth = max(flagWidth, len(f.flags))
+	}
 	var b strings.Builder
 	fmt.Fprintln(&b, "Worktree-scoped local development sandboxes")
 	fmt.Fprintln(&b)
@@ -110,7 +120,7 @@ func renderHelp(st ui.Styles) string {
 	for _, c := range helpCommands {
 		// The name renders bold; its column padding stays outside the
 		// style so Plain output keeps today’s exact spacing.
-		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(c.name), strings.Repeat(" ", 6-len(c.name)), c.summary)
+		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(c.name), strings.Repeat(" ", cmdWidth-len(c.name)), c.summary)
 	}
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Flags:"))
@@ -118,7 +128,7 @@ func renderHelp(st ui.Styles) string {
 		// Same layout as Commands: the flag renders bold, its column
 		// padding stays outside the style so Plain output keeps exact
 		// spacing.
-		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(f.flags), strings.Repeat(" ", 13-len(f.flags)), f.summary)
+		fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render(f.flags), strings.Repeat(" ", flagWidth-len(f.flags)), f.summary)
 	}
 	return b.String()
 }
@@ -178,8 +188,10 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 	cmd := args[0]
 	// A builtin command always wins over an alias of the same name, and
 	// says so once, on the invocation the user typed. help and version
-	// stay config-free, so they take no part in the check.
-	if depth == 0 && builtinCommands[cmd] {
+	// stay config-free, so they take no part in the check — and neither
+	// does list, which runs from any directory without reading project
+	// configuration at all.
+	if depth == 0 && builtinCommand(cmd) && cmd != "list" {
 		warnIfShadowed(ctx, cmd, out)
 	}
 	switch cmd {
@@ -229,13 +241,16 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 	}
 }
 
-// builtinCommands is every command name dispatch switches on. It must stay
-// in sync with that switch; help and version are deliberately absent
-// because they never load configuration.
-var builtinCommands = map[string]bool{
-	"plan": true, "build": true, "run": true, "up": true, "exec": true,
-	"status": true, "list": true, "logs": true, "stop": true, "rm": true,
-	"port": true,
+// builtinCommand reports whether the name is one dispatch switches on —
+// the same list help renders, so the two cannot drift. help and version
+// are deliberately absent because they never load configuration.
+func builtinCommand(name string) bool {
+	for _, c := range helpCommands {
+		if c.name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // maxAliasDepth is the dispatch depth at which alias resolution stops: the
