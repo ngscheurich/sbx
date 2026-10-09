@@ -733,14 +733,16 @@ func materializeGeneratedFiles(tr *translate.Translation) (func(), error) {
 
 // renderDrift formats drift for an error or report: any standalone notes
 // first, then the changed settings as a table with the creation-time value
-// on the left and the current value on the right. A plain output (the
+// on the left and the current value on the right. The table renders
+// unindented — a bordered table is self-delimiting, and the two columns
+// of indent are two columns the terminal can clip. A plain output (the
 // --plain lever) drops the table's borders, never its words.
 func renderDrift(out *output, notes []string, entries []state.DriftEntry) string {
 	var b strings.Builder
 	for _, n := range notes {
 		fmt.Fprintf(&b, "  %s\n", n)
 	}
-	b.WriteString(state.RenderDrift(entries, "  ", out.plain))
+	b.WriteString(state.RenderDrift(entries, "", out.plain))
 	return b.String()
 }
 
