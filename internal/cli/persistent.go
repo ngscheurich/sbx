@@ -671,8 +671,9 @@ func errUnowned(name string) error {
 // ensureImage resolves the image's manifest digest. A missing image with a
 // [build] recipe is an instruction to run `sbx build` — creation never
 // builds and never pulls it — while a missing prebuilt image may be
-// pulled. When both inspection and pull fail, both errors and a concrete
-// next step surface, exactly as on the disposable path.
+// pulled. PullIfMissing carries the inspect-then-pull sequence and the
+// guidance message, so both execution paths describe msb's separate image
+// store identically and cannot drift apart.
 func ensureImage(ctx context.Context, box msb.CLI, cfg config.Config) (string, error) {
 	image := cfg.Image
 	info, err := box.ImageInspect(ctx, image)
@@ -682,9 +683,8 @@ func ensureImage(ctx context.Context, box msb.CLI, cfg config.Config) (string, e
 	if cfg.Build != nil {
 		return "", errImageNeedsBuild(image)
 	}
-	inspectErr := err
-	if err := box.Pull(ctx, image); err != nil {
-		return "", fmt.Errorf("image %s is not available to msb: inspect: %v; pull: %v. msb’s image store is separate from Docker’s: pull the image from a registry, or import one built locally with `docker save %s -o <archive> && msb load --input <archive>`; with a [build] recipe in sbx.toml, `sbx build` does this", image, inspectErr, err, image)
+	if err := box.PullIfMissing(ctx, image); err != nil {
+		return "", err
 	}
 	info, err = box.ImageInspect(ctx, image)
 	if err != nil {

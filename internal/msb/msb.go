@@ -722,15 +722,6 @@ func (c CLI) Load(ctx context.Context, archive string) error {
 	return nil
 }
 
-// Pull runs `msb image pull <image>`: one backend mutation, so persistent
-// creation calls it only after inspecting the image has failed.
-func (c CLI) Pull(ctx context.Context, image string) error {
-	if _, err := c.run(ctx, "image", "pull", image); err != nil {
-		return fmt.Errorf("pulling image %s: %w", image, err)
-	}
-	return nil
-}
-
 // stdinIsTerminal reports whether the reader is an interactive terminal.
 // Anything that is not an *os.File — buffers in tests, pipes from callers
 // that never hand over a file — counts as a pipe.
