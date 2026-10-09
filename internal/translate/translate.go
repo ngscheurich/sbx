@@ -216,12 +216,15 @@ func SecretConfYAML(secrets map[string]config.SecretConfig, names []string) stri
 		s := secrets[name]
 		fmt.Fprintf(&b, "%s:\n", name)
 		fmt.Fprintf(&b, "  value: \"${%s}\"\n", s.FromEnv)
+		// Entries are quoted because YAML reads a bare leading "*" as an
+		// alias indicator, so a wildcard destination like *.example.com
+		// would otherwise fail to parse.
 		if len(s.Allow) == 1 {
-			fmt.Fprintf(&b, "  allow: [%s]\n", s.Allow[0])
+			fmt.Fprintf(&b, "  allow: [%q]\n", s.Allow[0])
 		} else {
 			fmt.Fprintf(&b, "  allow:\n")
 			for _, entry := range s.Allow {
-				fmt.Fprintf(&b, "    - %s\n", entry)
+				fmt.Fprintf(&b, "    - %q\n", entry)
 			}
 		}
 	}

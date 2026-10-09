@@ -148,7 +148,7 @@ func TestSandboxTranslatesRestrictedFixture(t *testing.T) {
 	if tr.SecretConfYAML == "" {
 		t.Fatal("SecretConfYAML is empty")
 	}
-	want := "TEST_TOKEN:\n  value: \"${SBX_FIXTURE_TOKEN}\"\n  allow: [example.com]\n"
+	want := "TEST_TOKEN:\n  value: \"${SBX_FIXTURE_TOKEN}\"\n  allow: [\"example.com\"]\n"
 	if tr.SecretConfYAML != want {
 		t.Errorf("SecretConfYAML =\n%s\nwant:\n%s", tr.SecretConfYAML, want)
 	}
@@ -506,7 +506,21 @@ func TestSecretConfYAMLMultipleAllows(t *testing.T) {
 		"TWO": {FromEnv: "HOST_TWO", Allow: []string{"one.com", "two.com"}},
 	}
 	got := SecretConfYAML(secrets, []string{"TWO"})
-	want := "TWO:\n  value: \"${HOST_TWO}\"\n  allow:\n    - one.com\n    - two.com\n"
+	want := "TWO:\n  value: \"${HOST_TWO}\"\n  allow:\n    - \"one.com\"\n    - \"two.com\"\n"
+	if got != want {
+		t.Errorf("SecretConfYAML =\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestSecretConfYAMLQuotesWildcards checks that a wildcard destination —
+// a shape AllowEntryValid accepts — renders quoted, because YAML reads a
+// bare leading "*" as an alias indicator and would reject the map.
+func TestSecretConfYAMLQuotesWildcards(t *testing.T) {
+	secrets := map[string]config.SecretConfig{
+		"WILD": {FromEnv: "HOST_WILD", Allow: []string{"*.example.com"}},
+	}
+	got := SecretConfYAML(secrets, []string{"WILD"})
+	want := "WILD:\n  value: \"${HOST_WILD}\"\n  allow: [\"*.example.com\"]\n"
 	if got != want {
 		t.Errorf("SecretConfYAML =\n%s\nwant:\n%s", got, want)
 	}
