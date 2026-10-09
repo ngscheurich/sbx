@@ -540,13 +540,6 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		return "", bootstrapNotDeclared, errUnowned(p.id.Sandbox)
 	}
 
-	// The sandbox exists, so its inspection report is authoritative: a
-	// stale registry entry is corrected here, on the mutating path, unless
-	// the correction would take a port another reservation holds.
-	if err := reconcilePorts(p, s); err != nil {
-		return "", bootstrapNotDeclared, err
-	}
-
 	notes, entries, err := driftReport(ctx, box, p)
 	if err != nil {
 		return "", bootstrapNotDeclared, err
@@ -563,6 +556,15 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	// unmet or unverifiable check refuses use without touching the
 	// sandbox or its data.
 	if err := ensureSandboxImageChecked(ctx, box, p, s.EffectiveConfig().ManifestDigest, out); err != nil {
+		return "", bootstrapNotDeclared, err
+	}
+
+	// The sandbox exists, so its inspection report is authoritative: a
+	// stale registry entry is corrected here, on the mutating path, after
+	// the drift gate — an edited guest port must surface as Creation
+	// drift, whose report says how to proceed, not as a registry
+	// verification failure that does not.
+	if err := reconcilePorts(p, s); err != nil {
 		return "", bootstrapNotDeclared, err
 	}
 
