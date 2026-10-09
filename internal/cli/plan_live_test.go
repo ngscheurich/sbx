@@ -2,11 +2,13 @@
 // already exists, plan describes what the backend holds — ownership,
 // Creation drift, Bootstrap completion, and the observed published
 // endpoints — without changing anything, exactly as status reports them.
-package cli
+package cli_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/ngscheurich/sbx/internal/harness"
 )
 
 // liveTOML is a configuration with a port and a bootstrap, so the live
@@ -31,14 +33,14 @@ run = "echo bootstrapped"
 // snapshot match, completed Bootstrap, and the endpoints inspection is
 // authoritative for.
 func TestPlanReportsExistingSandboxState(t *testing.T) {
-	worktree, _ := persistentFixture(t, liveTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.PersistentFixture(t, liveTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr)
 	}
@@ -63,10 +65,10 @@ func TestPlanReportsExistingSandboxState(t *testing.T) {
 
 	// The same report works for a stopped sandbox, whose labels, image
 	// digest, and declared ports survive in the recorded configuration.
-	if code, _, stderr := sbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
 		t.Fatalf("stop failed: %s", stderr)
 	}
-	code, stdout, stderr = sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr = harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed for a stopped sandbox: %s", stderr)
 	}
@@ -80,13 +82,13 @@ func TestPlanReportsExistingSandboxState(t *testing.T) {
 // TestLogsForwardsBackendFailures checks that a failing backend surfaces
 // through logs as a failure, never as an empty success.
 func TestLogsForwardsBackendFailures(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_LS_FAIL", "1")
 
-	code, _, stderr := sbxRun(t, worktree, []string{"logs"}, nil)
+	code, _, stderr := harness.SbxRun(t, worktree, []string{"logs"}, nil)
 	if code == 0 {
 		t.Fatal("logs succeeded while the backend's listing failed")
 	}
@@ -99,14 +101,14 @@ func TestLogsForwardsBackendFailures(t *testing.T) {
 // honest when the configuration has drifted from the existing sandbox: the
 // drift lines are reported, nothing is refused and nothing changes.
 func TestPlanReportsDriftOnExistingSandbox(t *testing.T) {
-	worktree, _ := persistentFixture(t, liveTOML)
+	worktree, _ := harness.PersistentFixture(t, liveTOML)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
-	writeFile(t, worktree+"/sbx.toml", strings.Replace(liveTOML, `memory = "2G"`, `memory = "4G"`, 1))
+	harness.WriteFile(t, worktree+"/sbx.toml", strings.Replace(liveTOML, `memory = "2G"`, `memory = "4G"`, 1))
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed on a drifted sandbox: %s", stderr)
 	}
@@ -122,12 +124,12 @@ func TestPlanReportsDriftOnExistingSandbox(t *testing.T) {
 // would refuse, and the plan reports that instead of pretending the
 // sandbox would be created.
 func TestPlanReportsUnownedExistingSandbox(t *testing.T) {
-	worktree, fake := persistentFixture(t, liveTOML)
+	worktree, fake := harness.PersistentFixture(t, liveTOML)
 	// A sandbox that sbx did not create: recorded directly in the fake's
 	// store, carrying no sbx.managed label.
-	fake.SeedSandbox(t, sandboxIdentityOf(t, worktree), "alpine:3.20", "running", map[string]string{"team": "ops"})
+	fake.SeedSandbox(t, harness.SandboxIdentityOf(t, worktree), "alpine:3.20", "running", map[string]string{"team": "ops"})
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr)
 	}
@@ -140,13 +142,13 @@ func TestPlanReportsUnownedExistingSandbox(t *testing.T) {
 // reported as an unknown state, never read as an unowned sandbox: the two
 // mean opposite things — one is a backend problem, the other a refusal.
 func TestPlanReportsUninspectableSandbox(t *testing.T) {
-	worktree, _ := persistentFixture(t, liveTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, liveTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_INSPECT_FAIL", "1")
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr)
 	}
@@ -162,16 +164,16 @@ func TestPlanReportsUninspectableSandbox(t *testing.T) {
 // section appears only when the backend holds a sandbox under the
 // identity: a fresh worktree's plan is purely prospective.
 func TestPlanWithoutExistingSandboxHasNoLiveReport(t *testing.T) {
-	worktree, _ := persistentFixture(t, liveTOML)
+	worktree, _ := harness.PersistentFixture(t, liveTOML)
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr)
 	}
 	if strings.Contains(stdout, "existing sandbox:") {
 		t.Errorf("a fresh worktree's plan reports an existing sandbox:\n%s", stdout)
 	}
-	if code, _, stderr := sbxRun(t, worktree, []string{"plan"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil); code != 0 {
 		t.Fatalf("second plan failed: %s", stderr)
 	}
 }

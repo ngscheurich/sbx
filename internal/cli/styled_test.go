@@ -1,4 +1,4 @@
-package cli
+package cli_test
 
 // Styled- and Plain-output tests: the regression pair that keeps color
 // from ever carrying meaning alone — ANSI appears on the styled path, and
@@ -9,6 +9,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
@@ -37,22 +39,22 @@ func styledScenarios(t *testing.T) (planOut, statusOut, errOut []byte) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	worktree, _ := fixtureRepo(t, untranslatableTOML)
+	worktree, _ := harness.FixtureRepo(t, untranslatableTOML)
 	var stdout, stderr bytes.Buffer
-	if code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
+	if code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	}); code != 0 {
 		t.Fatalf("plan on the untranslatable fixture failed: %s", stderr.String())
 	}
 	planOut = stdout.Bytes()
 
-	statusTree, _ := fixtureRepo(t, validTOML)
-	id := sandboxIdentityOf(t, statusTree)
+	statusTree, _ := harness.FixtureRepo(t, validTOML)
+	id := harness.SandboxIdentityOf(t, statusTree)
 	fake.SeedSandbox(t, id, "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
 	stdout.Reset()
 	stderr.Reset()
-	if code := chdir(t, statusTree, func() int {
-		return Run(context.Background(), []string{"status"}, nil, &stdout, &stderr)
+	if code := harness.Chdir(t, statusTree, func() int {
+		return cli.Run(context.Background(), []string{"status"}, nil, &stdout, &stderr)
 	}); code != 0 {
 		t.Fatalf("status on the seeded sandbox failed: %s", stderr.String())
 	}
@@ -60,7 +62,7 @@ func styledScenarios(t *testing.T) (planOut, statusOut, errOut []byte) {
 
 	stdout.Reset()
 	stderr.Reset()
-	Run(context.Background(), []string{"plan", "--verbose"}, nil, &stdout, &stderr)
+	cli.Run(context.Background(), []string{"plan", "--verbose"}, nil, &stdout, &stderr)
 	errOut = stderr.Bytes()
 	return
 }

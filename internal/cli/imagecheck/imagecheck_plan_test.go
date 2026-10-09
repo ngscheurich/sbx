@@ -1,7 +1,7 @@
 // Plan-side image-check tests: a declared image check's status appears in
 // the read-only plan as known, pending, or unresolvable — and planning
 // never launches a check sandbox or writes host state.
-package cli
+package imagecheck
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/state"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
@@ -20,8 +22,8 @@ func TestPlanReportsImageCheckStatus(t *testing.T) {
 	t.Run("pending", func(t *testing.T) {
 		fake := testsupport.FakeMSB(t)
 		t.Setenv("XDG_STATE_HOME", t.TempDir())
-		worktree, _ := fixtureRepo(t, imageCheckTOML)
-		writeImageCheckScript(t, worktree, checkScript)
+		worktree, _ := harness.FixtureRepo(t, imageCheckTOML)
+		harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
 		before := countImageCheckRecords(t)
 
 		rendered := planRender(t, worktree)
@@ -35,10 +37,10 @@ func TestPlanReportsImageCheckStatus(t *testing.T) {
 	t.Run("known", func(t *testing.T) {
 		fake := testsupport.FakeMSB(t)
 		t.Setenv("XDG_STATE_HOME", t.TempDir())
-		worktree, _ := fixtureRepo(t, imageCheckTOML)
-		writeImageCheckScript(t, worktree, checkScript)
+		worktree, _ := harness.FixtureRepo(t, imageCheckTOML)
+		harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
 		// A recorded pass for the image's contents and this script.
-		if err := state.SaveImageCheckSuccess(fakeDigest, state.ImageCheckScriptHash(checkScript)); err != nil {
+		if err := state.SaveImageCheckSuccess(harness.FakeDigest, state.ImageCheckScriptHash(harness.CheckScript)); err != nil {
 			t.Fatal(err)
 		}
 		before := countImageCheckRecords(t)
@@ -55,8 +57,8 @@ func TestPlanReportsImageCheckStatus(t *testing.T) {
 		fake := testsupport.FakeMSB(t)
 		t.Setenv("XDG_STATE_HOME", t.TempDir())
 		t.Setenv("FAKE_MSB_IMAGE_MISSING", "alpine:3.20")
-		worktree, _ := fixtureRepo(t, imageCheckTOML)
-		writeImageCheckScript(t, worktree, checkScript)
+		worktree, _ := harness.FixtureRepo(t, imageCheckTOML)
+		harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
 		before := countImageCheckRecords(t)
 
 		rendered := planRender(t, worktree)
@@ -87,8 +89,8 @@ func countImageCheckRecords(t *testing.T) int {
 func planRender(t *testing.T, worktree string) string {
 	t.Helper()
 	var stdout, stderr strings.Builder
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr.String())
@@ -103,8 +105,8 @@ func planRender(t *testing.T, worktree string) string {
 // seeded); no new file may appear.
 func assertPlanCheckPurity(t *testing.T, fake testsupport.Log, beforeRecords int) {
 	t.Helper()
-	if creates, execs, _ := checkSandboxCalls(fake); len(creates) != 0 || len(execs) != 0 {
-		t.Errorf("the plan launched a check sandbox:\n%s", callDump(fake.Calls()))
+	if creates, execs, _ := harness.CheckSandboxCalls(fake); len(creates) != 0 || len(execs) != 0 {
+		t.Errorf("the plan launched a check sandbox:\n%s", harness.CallDump(fake.Calls()))
 	}
 	for _, c := range fake.Calls() {
 		if c.Args[0] == "create" || c.Args[0] == "run" || c.Args[0] == "pull" {

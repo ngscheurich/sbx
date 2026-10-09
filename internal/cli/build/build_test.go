@@ -1,4 +1,4 @@
-package cli
+package build
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
@@ -51,7 +53,7 @@ func buildFixture(t *testing.T, toml string) (worktree string, msbLog testsuppor
 	dockerLog = testsupport.FakeDocker(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("TMPDIR", t.TempDir())
-	worktree, _ = fixtureRepo(t, toml)
+	worktree, _ = harness.FixtureRepo(t, toml)
 	if err := os.WriteFile(filepath.Join(worktree, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +63,7 @@ func buildFixture(t *testing.T, toml string) (worktree string, msbLog testsuppor
 // sbxBuild drives `sbx build` inside the worktree.
 func sbxBuild(t *testing.T, worktree string, flags ...string) (int, string, string) {
 	t.Helper()
-	return sbxRun(t, worktree, append([]string{"build"}, flags...), nil)
+	return harness.SbxRun(t, worktree, append([]string{"build"}, flags...), nil)
 }
 
 // archiveFromSaveCall recovers the archive path from a recorded docker save
@@ -122,7 +124,7 @@ func TestBuildImportsImageAndCleansArchive(t *testing.T) {
 		"--tag", "sbx-app:latest",
 		worktree,
 	}
-	if got := dockerCalls[0].Args; !equal(got, wantBuild) {
+	if got := dockerCalls[0].Args; !harness.Equal(got, wantBuild) {
 		t.Errorf("docker build argv mismatch:\n got: %q\nwant: %q", got, wantBuild)
 	}
 	save := dockerCalls[1].Args
@@ -136,18 +138,18 @@ func TestBuildImportsImageAndCleansArchive(t *testing.T) {
 	if strings.HasPrefix(archive, worktree) {
 		t.Errorf("archive %q is inside the repository", archive)
 	}
-	if wantSave := []string{"save", "--output", archive, "sbx-app:latest"}; !equal(save, wantSave) {
+	if wantSave := []string{"save", "--output", archive, "sbx-app:latest"}; !harness.Equal(save, wantSave) {
 		t.Errorf("docker save argv mismatch:\n got: %q\nwant: %q", save, wantSave)
 	}
 
 	msbCalls := msbLog.Calls()
 	if len(msbCalls) != 2 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(msbCalls), callDump(msbCalls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(msbCalls), harness.CallDump(msbCalls))
 	}
-	if got := msbCalls[0].Args; !equal(got, []string{"context", "--format", "json"}) {
+	if got := msbCalls[0].Args; !harness.Equal(got, []string{"context", "--format", "json"}) {
 		t.Errorf("first msb call mismatch: %q", got)
 	}
-	if got := msbCalls[1].Args; !equal(got, []string{"load", "--input", archive}) {
+	if got := msbCalls[1].Args; !harness.Equal(got, []string{"load", "--input", archive}) {
 		t.Errorf("msb load argv mismatch:\n got: %q\nwant: %q", got, msbCalls[1].Args)
 	}
 	if got := msbLog.Loaded(t, 1); got != archive {
@@ -196,7 +198,7 @@ platform = "linux/amd64"
 		"--tag", "sbx-app:v2",
 		filepath.Join(worktree, "docker"),
 	}
-	if got := dockerLog.Calls()[0].Args; !equal(got, want) {
+	if got := dockerLog.Calls()[0].Args; !harness.Equal(got, want) {
 		t.Errorf("docker build argv mismatch:\n got: %q\nwant: %q", got, want)
 	}
 }
@@ -204,7 +206,7 @@ platform = "linux/amd64"
 // TestBuildWithoutRecipeFails checks the no-build-recipe error: a prebuilt
 // image is never built, and neither tool is invoked.
 func TestBuildWithoutRecipeFails(t *testing.T) {
-	worktree, msbLog, dockerLog := buildFixture(t, disposableTOML)
+	worktree, msbLog, dockerLog := buildFixture(t, harness.DisposableTOML)
 
 	code, _, stderr := sbxBuild(t, worktree)
 	if code == 0 {
@@ -272,8 +274,8 @@ func TestBuildCleansArchiveOnCancellation(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		done <- chdir(t, worktree, func() int {
-			return Run(ctx, []string{"build"}, nil, &stdout, &stderr)
+		done <- harness.Chdir(t, worktree, func() int {
+			return cli.Run(ctx, []string{"build"}, nil, &stdout, &stderr)
 		})
 	}()
 	// Wait until docker is mid-build, then cancel.
@@ -315,24 +317,24 @@ func TestBuildKeepArchive(t *testing.T) {
 func TestBuildRunsImageCheckAfterImport(t *testing.T) {
 	t.Run("passing check is recorded", func(t *testing.T) {
 		worktree, msbLog, _ := buildFixture(t, buildCheckTOML)
-		writeImageCheckScript(t, worktree, checkScript)
+		harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
 
 		code, _, stderr := sbxBuild(t, worktree)
 		if code != 0 {
 			t.Fatalf("build failed: %s", stderr)
 		}
-		creates, execs, removes := checkSandboxCalls(msbLog)
+		creates, execs, removes := harness.CheckSandboxCalls(msbLog)
 		if len(creates) != 1 || len(execs) != 1 || len(removes) != 1 {
 			t.Fatalf("check sandbox calls = %d/%d/%d, want one of each:\n", len(creates), len(execs), len(removes))
 		}
-		if !hasSuccess(t, checkScript) {
+		if !harness.HasSuccess(t, harness.CheckScript) {
 			t.Errorf("no image-check success was recorded for the built image")
 		}
 	})
 
 	t.Run("failing check fails the build", func(t *testing.T) {
 		worktree, msbLog, dockerLog := buildFixture(t, buildCheckTOML)
-		writeImageCheckScript(t, worktree, checkScript)
+		harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
 		t.Setenv("FAKE_MSB_CHECK_EXIT", "37")
 
 		code, _, stderr := sbxBuild(t, worktree)
@@ -347,17 +349,17 @@ func TestBuildRunsImageCheckAfterImport(t *testing.T) {
 		if got := dockerLog.Calls(); len(got) != 2 {
 			t.Errorf("docker saw %d calls, want build and save", len(got))
 		}
-		if creates, execs, removes := checkSandboxCalls(msbLog); len(creates) != 1 || len(execs) != 1 || len(removes) != 1 {
+		if creates, execs, removes := harness.CheckSandboxCalls(msbLog); len(creates) != 1 || len(execs) != 1 || len(removes) != 1 {
 			t.Errorf("check sandbox calls = %d/%d/%d, want one of each", len(creates), len(execs), len(removes))
 		}
-		if hasSuccess(t, checkScript) {
+		if harness.HasSuccess(t, harness.CheckScript) {
 			t.Errorf("a failed check was recorded as a success")
 		}
 	})
 
 	t.Run("uninspectable image fails closed", func(t *testing.T) {
 		worktree, msbLog, dockerLog := buildFixture(t, buildCheckTOML)
-		writeImageCheckScript(t, worktree, checkScript)
+		harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
 		// The import happened, but the gate cannot resolve the image's
 		// contents: an inspection failure is not a pass.
 		t.Setenv("FAKE_MSB_IMAGE_MISSING", "sbx-app:latest")
@@ -369,10 +371,10 @@ func TestBuildRunsImageCheckAfterImport(t *testing.T) {
 		if got := dockerLog.Calls(); len(got) != 2 {
 			t.Errorf("docker saw %d calls, want build and save before the failed inspection", len(got))
 		}
-		if creates, _, _ := checkSandboxCalls(msbLog); len(creates) != 0 {
+		if creates, _, _ := harness.CheckSandboxCalls(msbLog); len(creates) != 0 {
 			t.Errorf("a check sandbox was created although the image cannot be inspected")
 		}
-		if hasSuccess(t, checkScript) {
+		if harness.HasSuccess(t, harness.CheckScript) {
 			t.Errorf("an uninspectable image was recorded as a pass")
 		}
 	})
@@ -383,13 +385,13 @@ func TestBuildRunsImageCheckAfterImport(t *testing.T) {
 // never writes a generated sandbox YAML anywhere.
 func TestBuildWritesNothingToTheRepository(t *testing.T) {
 	worktree, _, _ := buildFixture(t, buildTOML)
-	before := dirSnapshot(t, worktree)
+	before := harness.DirSnapshot(t, worktree)
 
 	code, _, stderr := sbxBuild(t, worktree)
 	if code != 0 {
 		t.Fatalf("build failed: %s", stderr)
 	}
-	if after := dirSnapshot(t, worktree); after != before {
+	if after := harness.DirSnapshot(t, worktree); after != before {
 		t.Errorf("build changed the worktree:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
@@ -452,7 +454,7 @@ func scrubPATH(t *testing.T, tools ...string) string {
 // fails with installation guidance, before anything runs.
 func TestBuildMissingDockerIsActionable(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, buildTOML)
+	worktree, _ := harness.FixtureRepo(t, buildTOML)
 	if err := os.WriteFile(filepath.Join(worktree, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +475,7 @@ func TestBuildMissingDockerIsActionable(t *testing.T) {
 // itself would work; only msb is absent.
 func TestBuildMissingMsbIsActionable(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, buildTOML)
+	worktree, _ := harness.FixtureRepo(t, buildTOML)
 	if err := os.WriteFile(filepath.Join(worktree, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -498,11 +500,11 @@ func TestRunWithBuildRecipeInstructsSbxBuild(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	dockerLog := testsupport.FakeDocker(t)
 	t.Setenv("FAKE_MSB_IMAGE_MISSING", "sbx-app:latest")
-	worktree, _ := fixtureRepo(t, buildTOML)
+	worktree, _ := harness.FixtureRepo(t, buildTOML)
 
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("run proceeded without the locally built image")
@@ -530,9 +532,9 @@ func TestUpWithBuildRecipeInstructsSbxBuild(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_IMAGE_MISSING", "sbx-app:latest")
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, buildTOML)
+	worktree, _ := harness.FixtureRepo(t, buildTOML)
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up proceeded without the locally built image")
 	}
@@ -561,7 +563,7 @@ func TestRebuildBehindSameTagDriftsPersistentSandbox(t *testing.T) {
 	if code, _, stderr := sbxBuild(t, worktree); code != 0 {
 		t.Fatalf("first build failed: %s", stderr)
 	}
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up after build failed: %s", stderr)
 	}
 
@@ -576,7 +578,7 @@ func TestRebuildBehindSameTagDriftsPersistentSandbox(t *testing.T) {
 
 	// The existing persistent sandbox is now drifted — content digests,
 	// not tags, decide that — and sbx never replaces it.
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up reused a sandbox whose image tag now resolves to new contents")
 	}
@@ -602,12 +604,12 @@ func TestRebuildBehindSameTagDriftsPersistentSandbox(t *testing.T) {
 	}
 
 	// exec refuses the drifted sandbox as well.
-	if code, _, _ := sbxRun(t, worktree, []string{"exec", "--", "true"}, nil); code == 0 {
+	if code, _, _ := harness.SbxRun(t, worktree, []string{"exec", "--", "true"}, nil); code == 0 {
 		t.Error("exec used the drifted sandbox")
 	}
 
 	// --allow-stale keeps the drifted sandbox usable.
-	code, _, stderr = sbxUp(t, worktree, "--allow-stale")
+	code, _, stderr = harness.SbxUp(t, worktree, "--allow-stale")
 	if code != 0 {
 		t.Fatalf("up --allow-stale failed: %s", stderr)
 	}
@@ -617,7 +619,7 @@ func TestRebuildBehindSameTagDriftsPersistentSandbox(t *testing.T) {
 
 	// A disposable run is not gated by the persistent sandbox's drift and
 	// may use the new image.
-	if code, _, stderr := sbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {
 		t.Errorf("disposable run failed after the rebuild: %s", stderr)
 	}
 

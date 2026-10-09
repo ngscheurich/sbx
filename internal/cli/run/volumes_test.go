@@ -2,17 +2,14 @@
 // worktrees, reuse of equal definitions, refusal of conflicting ones, the
 // fail-closed inspection rules, and the volumes' lifecycles — all against
 // the stateful fake msb with temporary linked worktrees.
-package cli
+package run
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/ngscheurich/sbx/internal/gitx"
-	"github.com/ngscheurich/sbx/internal/identity"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
@@ -51,17 +48,6 @@ size = "2G"
 policy = "public"
 `
 
-// projectVolumeName derives the backend name a worktree's Project volume
-// gets, the way the CLI does.
-func projectVolumeName(t *testing.T, worktree, logical string) string {
-	t.Helper()
-	info, err := gitx.Discover(context.Background(), worktree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return identity.VolumeName(info.CommonDir, logical)
-}
-
 // namedMountArgs returns the --mount-named values of every run or create
 // call the fake recorded.
 func namedMountArgs(fake testsupport.Log) []string {
@@ -84,14 +70,14 @@ func namedMountArgs(fake testsupport.Log) []string {
 // second worktree reuses the stored volume rather than making another.
 func TestSiblingWorktreesShareProjectVolumes(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, repo := fixtureRepo(t, projectVolumeTOML)
+	worktree, repo := harness.FixtureRepo(t, projectVolumeTOML)
 
 	sibling := t.TempDir() + "/wt2"
-	git(t, repo, "worktree", "add", sibling, "-b", "other")
-	writeFile(t, sibling+"/sbx.toml", projectVolumeTOML)
+	harness.Git(t, repo, "worktree", "add", sibling, "-b", "other")
+	harness.WriteFile(t, sibling+"/sbx.toml", projectVolumeTOML)
 
 	for _, wt := range []string{worktree, sibling} {
-		code, _, stderr := sbxRun(t, wt, []string{"run", "--", "true"}, nil)
+		code, _, stderr := harness.SbxRun(t, wt, []string{"run", "--", "true"}, nil)
 		if code != 0 {
 			t.Fatalf("run in %s failed: %s", wt, stderr)
 		}
@@ -104,11 +90,11 @@ func TestSiblingWorktreesShareProjectVolumes(t *testing.T) {
 	if mounts[0] != mounts[1] {
 		t.Errorf("sibling worktrees mounted different volumes: %q vs %q", mounts[0], mounts[1])
 	}
-	want := projectVolumeName(t, worktree, "cache") + ":/cache"
+	want := harness.ProjectVolumeName(t, worktree, "cache") + ":/cache"
 	if mounts[0] != want {
 		t.Errorf("mounted volume = %q, want %q", mounts[0], want)
 	}
-	if got := fake.VolumeNames(); len(got) != 1 || got[0] != projectVolumeName(t, worktree, "cache") {
+	if got := fake.VolumeNames(); len(got) != 1 || got[0] != harness.ProjectVolumeName(t, worktree, "cache") {
 		t.Errorf("backend volumes = %v, want exactly the one shared volume", got)
 	}
 }
@@ -117,17 +103,17 @@ func TestSiblingWorktreesShareProjectVolumes(t *testing.T) {
 // volume name in two unrelated repositories derives two backend names.
 func TestUnrelatedClonesDoNotShareProjectVolumes(t *testing.T) {
 	testsupport.FakeMSB(t)
-	wt1, _ := fixtureRepo(t, projectVolumeTOML)
-	wt2, _ := fixtureRepo(t, projectVolumeTOML)
+	wt1, _ := harness.FixtureRepo(t, projectVolumeTOML)
+	wt2, _ := harness.FixtureRepo(t, projectVolumeTOML)
 
 	for _, wt := range []string{wt1, wt2} {
-		code, _, stderr := sbxRun(t, wt, []string{"run", "--", "true"}, nil)
+		code, _, stderr := harness.SbxRun(t, wt, []string{"run", "--", "true"}, nil)
 		if code != 0 {
 			t.Fatalf("run in %s failed: %s", wt, stderr)
 		}
 	}
-	name1 := projectVolumeName(t, wt1, "cache")
-	name2 := projectVolumeName(t, wt2, "cache")
+	name1 := harness.ProjectVolumeName(t, wt1, "cache")
+	name2 := harness.ProjectVolumeName(t, wt2, "cache")
 	if name1 == name2 {
 		t.Errorf("unrelated clones share the backend volume name %q", name1)
 	}
@@ -138,7 +124,7 @@ func TestUnrelatedClonesDoNotShareProjectVolumes(t *testing.T) {
 // exactly — here a sized disk with its non-null capacity report.
 func TestEqualDefinitionsReuseProjectVolume(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, `
+	worktree, _ := harness.FixtureRepo(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
@@ -154,13 +140,13 @@ policy = "public"
 `)
 	// Simulate the volume a sibling worktree's earlier run created, with
 	// the non-null capacity_bytes a real disk volume reports.
-	fake.SeedVolume(t, projectVolumeName(t, worktree, "data"), "disk", testsupport.Int64(8589934592), nil)
+	fake.SeedVolume(t, harness.ProjectVolumeName(t, worktree, "data"), "disk", testsupport.Int64(8589934592), nil)
 
-	code, _, stderr := sbxRun(t, worktree, []string{"run", "--", "true"}, nil)
+	code, _, stderr := harness.SbxRun(t, worktree, []string{"run", "--", "true"}, nil)
 	if code != 0 {
 		t.Fatalf("run with an equal existing volume failed: %s", stderr)
 	}
-	if got := namedMountArgs(fake); len(got) != 1 || got[0] != projectVolumeName(t, worktree, "data")+":/data:kind=disk,size=8G" {
+	if got := namedMountArgs(fake); len(got) != 1 || got[0] != harness.ProjectVolumeName(t, worktree, "data")+":/data:kind=disk,size=8G" {
 		t.Errorf("mounted volumes = %v, want the disk with its definition", got)
 	}
 	if got := fake.VolumeNames(); len(got) != 1 {
@@ -174,7 +160,7 @@ policy = "public"
 // out.
 func TestConflictingProjectVolumeFailsBeforeCreation(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, `
+	worktree, _ := harness.FixtureRepo(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
@@ -188,11 +174,11 @@ size = "8G"
 [network]
 policy = "public"
 `)
-	fake.SeedVolume(t, projectVolumeName(t, worktree, "data"), "disk", testsupport.Int64(4294967296), nil)
+	fake.SeedVolume(t, harness.ProjectVolumeName(t, worktree, "data"), "disk", testsupport.Int64(4294967296), nil)
 
 	for _, args := range [][]string{{"run", "--", "true"}, {"up"}} {
 		before := len(fake.Calls())
-		code, _, stderr := sbxRun(t, worktree, args, nil)
+		code, _, stderr := harness.SbxRun(t, worktree, args, nil)
 		if code == 0 {
 			t.Fatalf("%v succeeded against a conflicting volume", args)
 		}
@@ -236,8 +222,8 @@ size = "%s"
 [network]
 policy = "public"
 `
-	worktree, repo := fixtureRepo(t, fmt.Sprintf(withSize, "8G"))
-	if code, _, stderr := sbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {
+	worktree, repo := harness.FixtureRepo(t, fmt.Sprintf(withSize, "8G"))
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {
 		t.Fatalf("first branch's run failed: %s", stderr)
 	}
 	created := fake.VolumeNames()
@@ -248,11 +234,11 @@ policy = "public"
 	// A second linked worktree on another branch declares the same logical
 	// volume with a different size: the branches disagree.
 	sibling := t.TempDir() + "/wt2"
-	git(t, repo, "worktree", "add", sibling, "-b", "smaller")
-	writeFile(t, sibling+"/sbx.toml", fmt.Sprintf(withSize, "4G"))
+	harness.Git(t, repo, "worktree", "add", sibling, "-b", "smaller")
+	harness.WriteFile(t, sibling+"/sbx.toml", fmt.Sprintf(withSize, "4G"))
 
 	before := len(fake.Calls())
-	code, _, stderr := sbxRun(t, sibling, []string{"run", "--", "true"}, nil)
+	code, _, stderr := harness.SbxRun(t, sibling, []string{"run", "--", "true"}, nil)
 	if code == 0 {
 		t.Fatal("the disagreeing branch's run succeeded")
 	}
@@ -282,9 +268,9 @@ func TestVolumeInspectionFailureFailsClosed(t *testing.T) {
 		t.Run(env.key, func(t *testing.T) {
 			fake := testsupport.FakeMSB(t)
 			t.Setenv(env.key, env.val)
-			worktree, _ := fixtureRepo(t, projectVolumeTOML)
+			worktree, _ := harness.FixtureRepo(t, projectVolumeTOML)
 
-			code, _, stderr := sbxRun(t, worktree, []string{"run", "--", "true"}, nil)
+			code, _, stderr := harness.SbxRun(t, worktree, []string{"run", "--", "true"}, nil)
 			if code == 0 {
 				t.Fatal("run proceeded without a readable volume listing")
 			}
@@ -304,10 +290,10 @@ func TestVolumeInspectionFailureFailsClosed(t *testing.T) {
 // split: Sandbox volumes die with their sandbox, while Project volumes
 // remain after `sbx rm` and across disposable runs.
 func TestProjectVolumesSurviveRemovalAndDisposableRuns(t *testing.T) {
-	worktree, fake := persistentFixture(t, mixedVolumesTOML)
-	projectName := projectVolumeName(t, worktree, "shared_cache")
+	worktree, fake := harness.PersistentFixture(t, mixedVolumesTOML)
+	projectName := harness.ProjectVolumeName(t, worktree, "shared_cache")
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	if !fake.VolumeExists(t, projectName) {
@@ -319,7 +305,7 @@ func TestProjectVolumesSurviveRemovalAndDisposableRuns(t *testing.T) {
 
 	// A disposable run alongside the persistent sandbox gets fresh owned
 	// volumes, removed with it; the Project volume persists.
-	if code, _, stderr := sbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"run", "--", "true"}, nil); code != 0 {
 		t.Fatalf("disposable run failed: %s", stderr)
 	}
 	if got := ownedVolumeNames(fake); len(got) != 1 {
@@ -331,7 +317,7 @@ func TestProjectVolumesSurviveRemovalAndDisposableRuns(t *testing.T) {
 
 	// Removing the persistent sandbox removes its Sandbox volumes and
 	// keeps the Project volume.
-	if code, _, stderr := sbxRun(t, worktree, []string{"rm", "--yes"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"rm", "--yes"}, nil); code != 0 {
 		t.Fatalf("rm failed: %s", stderr)
 	}
 	if got := ownedVolumeNames(fake); len(got) != 0 {
@@ -358,15 +344,15 @@ func ownedVolumeNames(fake testsupport.Log) []string {
 // read-only.
 func TestPlanReportsVolumeConflictsWithoutChangingAnything(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, repo := fixtureRepo(t, projectVolumeTOML)
-	backendName := projectVolumeName(t, worktree, "cache")
+	worktree, repo := harness.FixtureRepo(t, projectVolumeTOML)
+	backendName := harness.ProjectVolumeName(t, worktree, "cache")
 	fake.SeedVolume(t, backendName, "disk", testsupport.Int64(8589934592), nil)
 
-	beforeWorktree := dirSnapshot(t, worktree)
-	beforeRepo := dirSnapshot(t, repo)
+	beforeWorktree := harness.DirSnapshot(t, worktree)
+	beforeRepo := harness.DirSnapshot(t, repo)
 	beforeCalls := len(fake.Calls())
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr)
 	}
@@ -391,10 +377,10 @@ func TestPlanReportsVolumeConflictsWithoutChangingAnything(t *testing.T) {
 			t.Errorf("plan called %q; only read-only inspections are allowed", c.Args)
 		}
 	}
-	if after := dirSnapshot(t, worktree); after != beforeWorktree {
+	if after := harness.DirSnapshot(t, worktree); after != beforeWorktree {
 		t.Errorf("plan changed the worktree")
 	}
-	if after := dirSnapshot(t, repo); after != beforeRepo {
+	if after := harness.DirSnapshot(t, repo); after != beforeRepo {
 		t.Errorf("plan changed the repository")
 	}
 }
@@ -404,9 +390,9 @@ func TestPlanReportsVolumeConflictsWithoutChangingAnything(t *testing.T) {
 func TestPlanReportsUninspectableVolumes(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_VOLUMES_FAIL", "1")
-	worktree, _ := fixtureRepo(t, projectVolumeTOML)
+	worktree, _ := harness.FixtureRepo(t, projectVolumeTOML)
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"plan"}, nil)
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr)
 	}
@@ -415,13 +401,5 @@ func TestPlanReportsUninspectableVolumes(t *testing.T) {
 	}
 	if strings.Contains(stdout, "reuses the existing volume") || strings.Contains(stdout, "will be created") {
 		t.Errorf("plan claimed a compatibility outcome despite the failed inspection:\n%s", stdout)
-	}
-}
-
-// writeFile writes content to path, failing the test on error.
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
 	}
 }

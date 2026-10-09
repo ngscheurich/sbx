@@ -1,31 +1,17 @@
 // Persistent-sandbox command tests: creation, reuse, the stopped-to-running
 // transition, ownership, drift in each of its forms, read-only commands, and
 // removal with its confirmation rules — all against the stateful fake msb.
-package cli
+package up
 
 import (
-	"bytes"
-	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/ngscheurich/sbx/internal/gitx"
-	"github.com/ngscheurich/sbx/internal/identity"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
-
-// persistentTOML is a valid configuration for the persistent-sandbox tests.
-const persistentTOML = `
-image = "alpine:3.20"
-cpus = 2
-memory = "2G"
-
-[network]
-policy = "public"
-`
 
 // secretTOML declares one destination-scoped secret.
 const secretTOML = `
@@ -41,57 +27,20 @@ allow = ["example.com"]
 policy = "public"
 `
 
-// persistentFixture prepares a fake msb, a private host state directory, and
-// a worktree with the given sbx.toml.
-func persistentFixture(t *testing.T, toml string) (string, testsupport.Log) {
-	t.Helper()
-	fake := testsupport.FakeMSB(t)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, toml)
-	return worktree, fake
-}
-
-// sbxRun runs one sbx command line inside dir and captures its streams.
-func sbxRun(t *testing.T, dir string, args []string, stdin io.Reader) (int, string, string) {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	code := chdir(t, dir, func() int {
-		return Run(context.Background(), args, stdin, &stdout, &stderr)
-	})
-	return code, stdout.String(), stderr.String()
-}
-
-// sandboxIdentityOf derives the worktree's Sandbox identity the way the CLI
-// does, for tests that need the name the backend will see.
-func sandboxIdentityOf(t *testing.T, worktree string) string {
-	t.Helper()
-	info, err := gitx.Discover(context.Background(), worktree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return identity.Derive(info.CommonDir, info.WorktreeRoot).Sandbox
-}
-
 // snapshotPathOf returns the worktree sandbox's snapshot file path.
 func snapshotPathOf(t *testing.T, worktree string) string {
 	t.Helper()
-	return filepath.Join(os.Getenv("XDG_STATE_HOME"), "sbx", "snapshots", sandboxIdentityOf(t, worktree)+".json")
-}
-
-// sbxUp drives `sbx up` inside the worktree.
-func sbxUp(t *testing.T, worktree string, flags ...string) (int, string, string) {
-	t.Helper()
-	return sbxRun(t, worktree, append([]string{"up"}, flags...), nil)
+	return filepath.Join(os.Getenv("XDG_STATE_HOME"), "sbx", "snapshots", harness.SandboxIdentityOf(t, worktree)+".json")
 }
 
 // TestUpCreatesSandboxAndSnapshot checks the creation path: the exact call
 // sequence, the exact create argv, and the creation snapshot written under
 // the Sandbox identity with the image's manifest digest.
 func TestUpCreatesSandboxAndSnapshot(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	code, stdout, stderr := sbxUp(t, worktree)
+	code, stdout, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
@@ -101,15 +50,15 @@ func TestUpCreatesSandboxAndSnapshot(t *testing.T) {
 
 	calls := fake.Calls()
 	if len(calls) != 4 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
-	if got := calls[0].Args; !equal(got, []string{"context", "--format", "json"}) {
+	if got := calls[0].Args; !harness.Equal(got, []string{"context", "--format", "json"}) {
 		t.Errorf("first call mismatch: %q", got)
 	}
-	if got := calls[1].Args; !equal(got, []string{"ls", "--format", "json"}) {
+	if got := calls[1].Args; !harness.Equal(got, []string{"ls", "--format", "json"}) {
 		t.Errorf("second call mismatch: %q", got)
 	}
-	if got := calls[2].Args; !equal(got, []string{"image", "inspect", "alpine:3.20", "--format", "json"}) {
+	if got := calls[2].Args; !harness.Equal(got, []string{"image", "inspect", "alpine:3.20", "--format", "json"}) {
 		t.Errorf("third call mismatch: %q", got)
 	}
 	wantCreate := []string{"create", "--name", id, "alpine:3.20",
@@ -120,7 +69,7 @@ func TestUpCreatesSandboxAndSnapshot(t *testing.T) {
 		"--label", "sbx.mode=persistent",
 		"--label", "sbx.worktree=" + worktree,
 	}
-	if got := calls[3].Args; !equal(got, wantCreate) {
+	if got := calls[3].Args; !harness.Equal(got, wantCreate) {
 		t.Errorf("create argv mismatch:\n got: %q\nwant: %q", got, wantCreate)
 	}
 
@@ -138,8 +87,8 @@ func TestUpCreatesSandboxAndSnapshot(t *testing.T) {
 // TestUpIsIdempotentOnRunningSandbox checks the reuse path: the second up
 // inspects and confirms, but never creates, starts, or removes anything.
 func TestUpIsIdempotentOnRunningSandbox(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("first up failed: %s", stderr)
 	}
 	before, err := os.ReadFile(snapshotPathOf(t, worktree))
@@ -147,7 +96,7 @@ func TestUpIsIdempotentOnRunningSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, stdout, stderr := sbxUp(t, worktree)
+	code, stdout, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("second up failed: %s", stderr)
 	}
@@ -156,7 +105,7 @@ func TestUpIsIdempotentOnRunningSandbox(t *testing.T) {
 	}
 	calls := fake.Calls()
 	if len(calls) != 8 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 	for _, c := range calls[4:] {
 		switch c.Args[0] {
@@ -176,16 +125,16 @@ func TestUpIsIdempotentOnRunningSandbox(t *testing.T) {
 // TestUpStartsStoppedSandbox checks the stopped-to-running transition: the
 // existing sandbox is started, never recreated, and its snapshot survives.
 func TestUpStartsStoppedSandbox(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("first up failed: %s", stderr)
 	}
-	if code, _, stderr := sbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
 		t.Fatalf("stop failed: %s", stderr)
 	}
 
-	code, stdout, stderr := sbxUp(t, worktree)
+	code, stdout, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("second up failed: %s", stderr)
 	}
@@ -193,7 +142,7 @@ func TestUpStartsStoppedSandbox(t *testing.T) {
 		t.Errorf("second up did not report a start:\n%s", stdout)
 	}
 	last := fake.Calls()[len(fake.Calls())-1]
-	if !equal(last.Args, []string{"start", id}) {
+	if !harness.Equal(last.Args, []string{"start", id}) {
 		t.Errorf("last call mismatch: %q", last.Args)
 	}
 	if _, err := os.Stat(snapshotPathOf(t, worktree)); err != nil {
@@ -213,14 +162,14 @@ func TestUpStartsStoppedSandbox(t *testing.T) {
 // TestExecRunsGuestCommandAndLeavesSandboxRunning checks exec's argv, stream
 // forwarding, exit-status propagation, and that the sandbox keeps running.
 func TestExecRunsGuestCommandAndLeavesSandboxRunning(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_EXIT", "7")
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"exec", "--", "echo", "hello"}, strings.NewReader("guest-input\n"))
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"exec", "--", "echo", "hello"}, strings.NewReader("guest-input\n"))
 	if code != 7 {
 		t.Errorf("exec exit code = %d, want the guest's 7", code)
 	}
@@ -236,10 +185,10 @@ func TestExecRunsGuestCommandAndLeavesSandboxRunning(t *testing.T) {
 		}
 	}
 	if execCall == nil {
-		t.Fatalf("no exec call recorded:\n%s", callDump(fake.Calls()))
+		t.Fatalf("no exec call recorded:\n%s", harness.CallDump(fake.Calls()))
 	}
 	want := []string{"exec", id, "--workdir", "/workspace", "--stream", "--", "echo", "hello"}
-	if !equal(execCall.Args, want) {
+	if !harness.Equal(execCall.Args, want) {
 		t.Errorf("exec argv mismatch:\n got: %q\nwant: %q", execCall.Args, want)
 	}
 	if got := fake.Stdin(t); got != "guest-input\n" {
@@ -247,7 +196,7 @@ func TestExecRunsGuestCommandAndLeavesSandboxRunning(t *testing.T) {
 	}
 
 	// exec leaves the sandbox running.
-	code, stdout, stderr = sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr = harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
@@ -262,13 +211,13 @@ func TestExecRunsGuestCommandAndLeavesSandboxRunning(t *testing.T) {
 // reported a live sandbox and `msb start` refused it as already running).
 // msb's own refusal is authoritative: the sandbox is up, so exec proceeds.
 func TestExecSurvivesListingStatusMismatch(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_STATUS_OVERRIDE", "created")
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"exec", "--", "echo", "hello"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"exec", "--", "echo", "hello"}, nil)
 	if code != 0 {
 		t.Fatalf("exec failed on a live sandbox the listing misreported: %s", stderr)
 	}
@@ -294,16 +243,16 @@ func TestExecSurvivesListingStatusMismatch(t *testing.T) {
 // TestExecImpliesUp checks that exec creates the persistent sandbox first
 // when none exists yet.
 func TestExecImpliesUp(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"exec", "--", "true"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"exec", "--", "true"}, nil)
 	if code != 0 {
 		t.Fatalf("exec failed: %s\n%s", stderr, stdout)
 	}
 	sawCreate, sawExec := false, false
 	for _, c := range fake.Calls() {
-		if c.Args[0] == "create" && contains(c.Args, "--name") && contains(c.Args, id) {
+		if c.Args[0] == "create" && harness.Contains(c.Args, "--name") && harness.Contains(c.Args, id) {
 			sawCreate = true
 		}
 		if c.Args[0] == "exec" {
@@ -311,7 +260,7 @@ func TestExecImpliesUp(t *testing.T) {
 		}
 	}
 	if !sawCreate || !sawExec {
-		t.Errorf("exec without an existing sandbox did not create first (create=%v, exec=%v):\n%s", sawCreate, sawExec, callDump(fake.Calls()))
+		t.Errorf("exec without an existing sandbox did not create first (create=%v, exec=%v):\n%s", sawCreate, sawExec, harness.CallDump(fake.Calls()))
 	}
 	if _, err := os.Stat(snapshotPathOf(t, worktree)); err != nil {
 		t.Errorf("implicit up wrote no snapshot: %v", err)
@@ -321,7 +270,7 @@ func TestExecImpliesUp(t *testing.T) {
 // TestExecWithoutArgvRunsConfiguredShell checks that a bare exec runs the
 // configured shell, directly and without a host shell.
 func TestExecWithoutArgvRunsConfiguredShell(t *testing.T) {
-	worktree, fake := persistentFixture(t, `
+	worktree, fake := harness.PersistentFixture(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
@@ -330,14 +279,14 @@ shell = "/bin/bash"
 [network]
 policy = "public"
 `)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
-	if code, _, stderr := sbxRun(t, worktree, []string{"exec"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"exec"}, nil); code != 0 {
 		t.Fatalf("exec failed: %s", stderr)
 	}
 	for _, c := range fake.Calls() {
-		if c.Args[0] == "exec" && !equal(c.Args[len(c.Args)-2:], []string{"--", "/bin/bash"}) {
+		if c.Args[0] == "exec" && !harness.Equal(c.Args[len(c.Args)-2:], []string{"--", "/bin/bash"}) {
 			t.Errorf("bare exec did not run the configured shell: %q", c.Args)
 		}
 	}
@@ -347,11 +296,11 @@ policy = "public"
 // sandbox without the sbx.managed label stops up before any mutation, with
 // the way out named.
 func TestUpRefusesUnownedNameCollision(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 	fake.SeedSandbox(t, id, "alpine:3.20", "running", map[string]string{"team": "ops"})
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up adopted a sandbox it did not create")
 	}
@@ -372,16 +321,16 @@ func TestUpRefusesUnownedNameCollision(t *testing.T) {
 // reuse, names both values, and that --allow-stale uses the sandbox anyway
 // with a warning.
 func TestUpRefusesConfigurationDrift(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("first up failed: %s", stderr)
 	}
-	changed := strings.Replace(persistentTOML, `memory = "2G"`, `memory = "4G"`, 1)
+	changed := strings.Replace(harness.PersistentTOML, `memory = "2G"`, `memory = "4G"`, 1)
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(changed), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up reused a drifted sandbox without --allow-stale")
 	}
@@ -391,7 +340,7 @@ func TestUpRefusesConfigurationDrift(t *testing.T) {
 		}
 	}
 
-	code, stdout, stderr := sbxUp(t, worktree, "--allow-stale")
+	code, stdout, stderr := harness.SbxUp(t, worktree, "--allow-stale")
 	if code != 0 {
 		t.Fatalf("up --allow-stale failed: %s", stderr)
 	}
@@ -406,13 +355,13 @@ func TestUpRefusesConfigurationDrift(t *testing.T) {
 // TestUpRefusesImageDigestDrift checks that a tag repointed at new contents
 // is drift even though sbx.toml is unchanged.
 func TestUpRefusesImageDigestDrift(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("first up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_IMAGE_DIGEST", "sha256:rebuilt")
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up reused a sandbox whose image tag now resolves to new contents")
 	}
@@ -426,13 +375,13 @@ func TestUpRefusesImageDigestDrift(t *testing.T) {
 // TestUpRefusesUnresolvableImage checks that an image msb cannot inspect
 // fails closed as drift, not as proof of being unchanged.
 func TestUpRefusesUnresolvableImage(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("first up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_IMAGE_MISSING", "alpine:3.20")
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up treated an unresolvable image as unchanged")
 	}
@@ -444,15 +393,15 @@ func TestUpRefusesUnresolvableImage(t *testing.T) {
 // TestUpRefusesMissingSnapshot checks that an owned sandbox without a
 // snapshot counts as drifted.
 func TestUpRefusesMissingSnapshot(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("first up failed: %s", stderr)
 	}
 	if err := os.Remove(snapshotPathOf(t, worktree)); err != nil {
 		t.Fatal(err)
 	}
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up reused a sandbox without a creation snapshot")
 	}
@@ -465,11 +414,11 @@ func TestUpRefusesMissingSnapshot(t *testing.T) {
 // handling: both the inspect and pull failures surface, with the concrete
 // next step, before any create.
 func TestUpMissingImageCreationFailure(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
 	t.Setenv("FAKE_MSB_IMAGE_MISSING", "alpine:3.20")
 	t.Setenv("FAKE_MSB_PULL_FAIL", "1")
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up created a sandbox from an unavailable image")
 	}
@@ -490,7 +439,7 @@ func TestUpMissingImageCreationFailure(t *testing.T) {
 // and the create argv carries each volume's definition — the disk's kind
 // and size, the directory's quota.
 func TestUpCreatesWithProjectVolumes(t *testing.T) {
-	worktree, fake := persistentFixture(t, `
+	worktree, fake := harness.PersistentFixture(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
@@ -509,23 +458,23 @@ size = "8G"
 [network]
 policy = "public"
 `)
-	id := sandboxIdentityOf(t, worktree)
-	code, _, stderr := sbxUp(t, worktree)
+	id := harness.SandboxIdentityOf(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up with declared Project volumes failed: %s", stderr)
 	}
 	calls := fake.Calls()
 	if len(calls) != 5 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 	// context, sandbox listing, volume listing, image inspect, create —
 	// the compatibility check runs before the image or sandbox is touched.
-	if got := calls[2].Args; !equal(got, []string{"volumes", "--format", "json"}) {
+	if got := calls[2].Args; !harness.Equal(got, []string{"volumes", "--format", "json"}) {
 		t.Errorf("third call mismatch: %q", got)
 	}
 	create := calls[4].Args
-	capped := projectVolumeName(t, worktree, "capped") + ":/capped:quota=4G"
-	data := projectVolumeName(t, worktree, "data") + ":/data:kind=disk,size=8G"
+	capped := harness.ProjectVolumeName(t, worktree, "capped") + ":/capped:quota=4G"
+	data := harness.ProjectVolumeName(t, worktree, "data") + ":/data:kind=disk,size=8G"
 	for i, a := range create {
 		if a == "--mount-named" && i+1 < len(create) {
 			switch create[i+1] {
@@ -551,8 +500,8 @@ policy = "public"
 // without a [bootstrap] table is an explicit error, before any backend
 // call: silently treating it as a plain up would hide an unrun step.
 func TestUpRetryBootstrapRequiresADeclaration(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	code, _, stderr := sbxUp(t, worktree, "--retry-bootstrap")
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	code, _, stderr := harness.SbxUp(t, worktree, "--retry-bootstrap")
 	if code != exitFailure {
 		t.Errorf("exit code = %d, want a failure", code)
 	}
@@ -573,14 +522,14 @@ func TestUpRetryBootstrapRequiresADeclaration(t *testing.T) {
 // host, ticket 01), and sbx's subprocess environment carries the host
 // value through. No sbx output or host state may contain the value.
 func TestSecretBearingRestartSuppliesHostValues(t *testing.T) {
-	worktree, fake := persistentFixture(t, secretTOML)
+	worktree, fake := harness.PersistentFixture(t, secretTOML)
 	t.Setenv("SBX_TEST_TOKEN", "throwaway-test-value")
 	// The fake refuses a start whose environment lacks the variable, the
 	// way the real msb fails a restart whose secret value is missing.
 	t.Setenv("FAKE_MSB_START_REQUIRES_ENV", "SBX_TEST_TOKEN")
-	id := sandboxIdentityOf(t, worktree)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("creating a sandbox with a secret failed: %s", stderr)
 	}
@@ -588,7 +537,7 @@ func TestSecretBearingRestartSuppliesHostValues(t *testing.T) {
 	for _, c := range fake.Calls() {
 		if c.Args[0] == "create" {
 			createIdx = c.Index
-			if !contains(c.Args, "--secret-conf") {
+			if !harness.Contains(c.Args, "--secret-conf") {
 				t.Errorf("create did not pass the secret map: %q", c.Args)
 			}
 		}
@@ -601,22 +550,22 @@ func TestSecretBearingRestartSuppliesHostValues(t *testing.T) {
 		t.Errorf("secret map contains the host value:\n%s", conf)
 	}
 
-	if code, _, stderr := sbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
 		t.Fatalf("stop failed: %s", stderr)
 	}
 
-	code, stdout, stderr := sbxUp(t, worktree)
+	code, stdout, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up failed to restart the stopped secret-bearing sandbox: %s", stderr)
 	}
 	started := false
 	for _, c := range fake.Calls() {
-		if equal(c.Args, []string{"start", id}) {
+		if harness.Equal(c.Args, []string{"start", id}) {
 			started = true
 		}
 	}
 	if !started {
-		t.Errorf("the restart never reached the backend as a start:\n%s", callDump(fake.Calls()))
+		t.Errorf("the restart never reached the backend as a start:\n%s", harness.CallDump(fake.Calls()))
 	}
 	if !strings.Contains(stdout, "started") {
 		t.Errorf("the restart report is missing from up's output:\n%s", stdout)
@@ -640,21 +589,21 @@ func TestSecretBearingRestartSuppliesHostValues(t *testing.T) {
 // msb would fail the start, and sbx refuses before any resource changes
 // instead, naming the variable.
 func TestSecretBearingRestartFailsClosedOnMissingSecret(t *testing.T) {
-	worktree, fake := persistentFixture(t, secretTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, fake := harness.PersistentFixture(t, secretTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 	t.Setenv("SBX_TEST_TOKEN", "throwaway-test-value")
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("creating a sandbox with a secret failed: %s", stderr)
 	}
-	if code, _, stderr := sbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
 		t.Fatalf("stop failed: %s", stderr)
 	}
 	if err := os.Unsetenv("SBX_TEST_TOKEN"); err != nil {
 		t.Fatal(err)
 	}
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up started a secret-bearing sandbox with its host variable missing")
 	}
@@ -662,7 +611,7 @@ func TestSecretBearingRestartFailsClosedOnMissingSecret(t *testing.T) {
 		t.Errorf("stderr does not name the missing variable:\n%s", stderr)
 	}
 	for _, c := range fake.Calls() {
-		if equal(c.Args, []string{"start", id}) {
+		if harness.Equal(c.Args, []string{"start", id}) {
 			t.Errorf("a restart without the secret's host value reached the backend: %q", c.Args)
 		}
 	}
@@ -671,8 +620,8 @@ func TestSecretBearingRestartFailsClosedOnMissingSecret(t *testing.T) {
 // TestExecRefusesArgvWithoutSeparator checks the argv-parsing rule shared
 // with run.
 func TestExecRefusesArgvWithoutSeparator(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	code, _, stderr := sbxRun(t, worktree, []string{"exec", "echo", "hello"}, nil)
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	code, _, stderr := harness.SbxRun(t, worktree, []string{"exec", "echo", "hello"}, nil)
 	if code != exitUsage {
 		t.Errorf("exit code = %d, want a usage error", code)
 	}
@@ -684,13 +633,13 @@ func TestExecRefusesArgvWithoutSeparator(t *testing.T) {
 // TestStopKeepsState checks that stopping is a state-keeping transition and
 // that status reads the recorded configuration of a stopped sandbox.
 func TestStopKeepsState(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"stop"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"stop"}, nil)
 	if code != 0 {
 		t.Fatalf("stop failed: %s", stderr)
 	}
@@ -698,7 +647,7 @@ func TestStopKeepsState(t *testing.T) {
 		t.Errorf("stop output does not say the state is kept:\n%s", stdout)
 	}
 	last := fake.Calls()[len(fake.Calls())-1]
-	if !equal(last.Args, []string{"stop", id}) {
+	if !harness.Equal(last.Args, []string{"stop", id}) {
 		t.Errorf("stop call mismatch: %q", last.Args)
 	}
 	if _, err := os.Stat(snapshotPathOf(t, worktree)); err != nil {
@@ -706,7 +655,7 @@ func TestStopKeepsState(t *testing.T) {
 	}
 
 	// Status of a stopped sandbox reads the recorded configuration layer.
-	code, stdout, stderr = sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr = harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
@@ -717,7 +666,7 @@ func TestStopKeepsState(t *testing.T) {
 	}
 
 	// Stopping again is reported, not re-issued.
-	code, stdout, _ = sbxRun(t, worktree, []string{"stop"}, nil)
+	code, stdout, _ = harness.SbxRun(t, worktree, []string{"stop"}, nil)
 	if code != 0 {
 		t.Fatalf("second stop failed")
 	}
@@ -733,9 +682,9 @@ func TestStopKeepsState(t *testing.T) {
 
 // TestStopAndLogsRequireExistingSandbox checks the missing-sandbox errors.
 func TestStopAndLogsRequireExistingSandbox(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
 	for _, cmd := range []string{"stop", "logs", "rm"} {
-		code, _, stderr := sbxRun(t, worktree, []string{cmd}, nil)
+		code, _, stderr := harness.SbxRun(t, worktree, []string{cmd}, nil)
 		if code == 0 {
 			t.Errorf("%s succeeded without a sandbox", cmd)
 		}
@@ -747,13 +696,13 @@ func TestStopAndLogsRequireExistingSandbox(t *testing.T) {
 
 // TestLogsShowsBackendLogs checks the read-only logs pass-through.
 func TestLogsShowsBackendLogs(t *testing.T) {
-	worktree, _ := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"logs"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"logs"}, nil)
 	if code != 0 {
 		t.Fatalf("logs failed: %s", stderr)
 	}
@@ -768,16 +717,16 @@ func TestLogsShowsBackendLogs(t *testing.T) {
 // or mutating the backend, and that it stays usable when the sandbox has
 // drifted — exactly when up and exec would refuse.
 func TestStatusIsReadOnly(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	stateDir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "sbx")
-	before := dirSnapshot(t, stateDir)
+	before := harness.DirSnapshot(t, stateDir)
 	callsBefore := len(fake.Calls())
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
@@ -786,7 +735,7 @@ func TestStatusIsReadOnly(t *testing.T) {
 			t.Errorf("status output is missing %q:\n%s", want, stdout)
 		}
 	}
-	if after := dirSnapshot(t, stateDir); after != before {
+	if after := harness.DirSnapshot(t, stateDir); after != before {
 		t.Errorf("status wrote sbx state:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 	for _, c := range fake.Calls()[callsBefore:] {
@@ -802,11 +751,11 @@ func TestStatusIsReadOnly(t *testing.T) {
 	}
 
 	// A drifted sandbox is reported, not refused.
-	changed := strings.Replace(persistentTOML, `memory = "2G"`, `memory = "4G"`, 1)
+	changed := strings.Replace(harness.PersistentTOML, `memory = "2G"`, `memory = "4G"`, 1)
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(changed), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, stdout, stderr = sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr = harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status refused a drifted sandbox: %s", stderr)
 	}
@@ -818,10 +767,10 @@ func TestStatusIsReadOnly(t *testing.T) {
 // TestStatusOnMissingAndUnownedSandboxes checks status's reports for a
 // worktree without a sandbox and for a same-named unowned one.
 func TestStatusOnMissingAndUnownedSandboxes(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed without a sandbox: %s", stderr)
 	}
@@ -831,7 +780,7 @@ func TestStatusOnMissingAndUnownedSandboxes(t *testing.T) {
 
 	// A same-named unowned sandbox is reported as such, never adopted.
 	fake.SeedSandbox(t, id, "alpine:3.20", "running", map[string]string{"team": "ops"})
-	code, stdout, stderr = sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr = harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed on an unowned sandbox: %s", stderr)
 	}
@@ -843,12 +792,12 @@ func TestStatusOnMissingAndUnownedSandboxes(t *testing.T) {
 // TestRmNeedsConfirmationNoninteractively checks that rm without --yes
 // fails closed when stdin is not a terminal, touching nothing.
 func TestRmNeedsConfirmationNoninteractively(t *testing.T) {
-	worktree, fake := persistentFixture(t, persistentTOML)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 
-	code, _, stderr := sbxRun(t, worktree, []string{"rm"}, nil)
+	code, _, stderr := harness.SbxRun(t, worktree, []string{"rm"}, nil)
 	if code == 0 {
 		t.Fatal("rm removed a sandbox without confirmation")
 	}
@@ -869,7 +818,7 @@ func TestRmNeedsConfirmationNoninteractively(t *testing.T) {
 // backend call, the snapshot cleanup, the report of Sandbox volumes lost,
 // and that nothing ever touches volumes or port reservations.
 func TestRmYesRemovesSandboxAndVolumesReport(t *testing.T) {
-	worktree, fake := persistentFixture(t, `
+	worktree, fake := harness.PersistentFixture(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
@@ -887,12 +836,12 @@ size = "8G"
 [network]
 policy = "public"
 `)
-	id := sandboxIdentityOf(t, worktree)
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	id := harness.SandboxIdentityOf(t, worktree)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"rm", "--yes"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"rm", "--yes"}, nil)
 	if code != 0 {
 		t.Fatalf("rm --yes failed: %s", stderr)
 	}
@@ -903,7 +852,7 @@ policy = "public"
 			rmCall = &call
 		}
 	}
-	if rmCall == nil || !equal(rmCall.Args, []string{"remove", "--force", id}) {
+	if rmCall == nil || !harness.Equal(rmCall.Args, []string{"remove", "--force", id}) {
 		t.Errorf("remove call mismatch: %+v", rmCall)
 	}
 	for _, want := range []string{
@@ -920,13 +869,13 @@ policy = "public"
 		t.Errorf("the snapshot survived removal: %v", err)
 	}
 	for _, c := range fake.Calls() {
-		if contains(c.Args, "volume") || contains(c.Args, "volumes") {
+		if harness.Contains(c.Args, "volume") || harness.Contains(c.Args, "volumes") {
 			t.Errorf("rm touched a volume command: %q", c.Args)
 		}
 	}
 
 	// The sandbox is gone from the backend's view.
-	code, stdout, stderr = sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr = harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed after rm: %s", stderr)
 	}
@@ -935,30 +884,9 @@ policy = "public"
 	}
 }
 
-// TestConfirmRemovalAnswers checks the interactive confirmation's accepted
-// and declined answers, including end of input.
-func TestConfirmRemovalAnswers(t *testing.T) {
-	cases := []struct {
-		answer string
-		want   bool
-	}{
-		{"y\n", true},
-		{"yes\n", true},
-		{"YES\n", true},
-		{" y \n", true},
-		{"n\n", false},
-		{"no\n", false},
-		{"", false},
-		{"\n", false},
-	}
-	for _, tc := range cases {
-		var stderr bytes.Buffer
-		got := confirmRemoval("app-wt1-1234abcd", strings.NewReader(tc.answer), &stderr)
-		if got != tc.want {
-			t.Errorf("confirmRemoval(%q) = %v, want %v", tc.answer, got, tc.want)
-		}
-		if !strings.Contains(stderr.String(), "Remove the persistent sandbox") {
-			t.Errorf("the prompt is missing from stderr:\n%s", stderr.String())
-		}
-	}
-}
+// The exit codes these tests pin from the outside: the contract is the
+// numbers themselves, not the identifiers.
+const (
+	exitFailure = 1
+	exitUsage   = 2
+)

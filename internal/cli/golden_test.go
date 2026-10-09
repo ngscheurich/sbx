@@ -1,4 +1,4 @@
-package cli
+package cli_test
 
 // Plain-output goldens: what a pipe or NO_COLOR receives is byte-identical
 // to sbx's pre-styling output, pinned per surface — help, port help, one
@@ -14,12 +14,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
 func TestPlainHelpGolden(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := Run(context.Background(), []string{"--help"}, nil, &stdout, &stderr); code != 0 {
+	if code := cli.Run(context.Background(), []string{"--help"}, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
 	testsupport.Golden(t, "testdata/help.golden", stdout.Bytes())
@@ -27,7 +29,7 @@ func TestPlainHelpGolden(t *testing.T) {
 
 func TestPlainPortHelpGolden(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := Run(context.Background(), []string{"port"}, nil, &stdout, &stderr); code != 0 {
+	if code := cli.Run(context.Background(), []string{"port"}, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit code = %d (stderr: %s)", code, stderr.String())
 	}
 	testsupport.Golden(t, "testdata/port-help.golden", stdout.Bytes())
@@ -37,7 +39,7 @@ func TestPlainPortHelpGolden(t *testing.T) {
 // the styled prefix must strip back to exactly today's bytes.
 func TestPlainErrorLineGolden(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	Run(context.Background(), []string{"plan", "--verbose"}, nil, &stdout, &stderr)
+	cli.Run(context.Background(), []string{"plan", "--verbose"}, nil, &stdout, &stderr)
 	testsupport.Golden(t, "testdata/error-line.golden", stderr.Bytes())
 }
 
@@ -50,8 +52,8 @@ func seededStatusOutput(t *testing.T) []byte {
 	t.Helper()
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, validTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.FixtureRepo(t, validTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 	fake.SeedSandbox(t, id, "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
 	fake.SeedPublishedPort(t, id, 8080, 80)
 
@@ -60,8 +62,8 @@ func seededStatusOutput(t *testing.T) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"status"}, nil, &stdout, &stderr)
+	if code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"status"}, nil, &stdout, &stderr)
 	}); code != 0 {
 		t.Fatalf("status on the seeded sandbox failed: %s", stderr.String())
 	}

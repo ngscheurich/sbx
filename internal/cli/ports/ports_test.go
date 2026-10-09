@@ -2,7 +2,7 @@
 // reuse across worktrees, unmanaged backends and occupied loopbacks,
 // stale registry records and their correction, exhausted ranges,
 // backend-inspection failures, prune, and the read-only reports.
-package cli
+package ports
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/state"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
@@ -76,10 +78,10 @@ func seedRegistry(t *testing.T, records ...state.PortReservation) {
 // carries the --port flags, the registry records the reservation, and
 // the output reports the endpoint.
 func TestUpReservesAndPublishesPorts(t *testing.T) {
-	worktree, fake := persistentFixture(t, portsTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, fake := harness.PersistentFixture(t, portsTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	code, stdout, stderr := sbxUp(t, worktree)
+	code, stdout, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
@@ -106,7 +108,7 @@ func TestUpReservesAndPublishesPorts(t *testing.T) {
 
 	// A reuse run neither re-picks nor rewrites: the sandbox's ports change
 	// only by recreating it.
-	code, stdout, _ = sbxUp(t, worktree)
+	code, stdout, _ = harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("second up failed: %s", stderr)
 	}
@@ -124,16 +126,16 @@ func TestUpReservesAndPublishesPorts(t *testing.T) {
 func TestPortsDistinctAcrossWorktrees(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree1, _ := fixtureRepo(t, portsTOML)
-	worktree2, _ := fixtureRepo(t, portsTOML)
+	worktree1, _ := harness.FixtureRepo(t, portsTOML)
+	worktree2, _ := harness.FixtureRepo(t, portsTOML)
 
 	for i, wt := range []string{worktree1, worktree2} {
-		if code, _, stderr := sbxUp(t, wt); code != 0 {
+		if code, _, stderr := harness.SbxUp(t, wt); code != 0 {
 			t.Fatalf("up in worktree %d failed: %s", i+1, stderr)
 		}
 	}
-	port1 := registrySandboxPort(t, sandboxIdentityOf(t, worktree1), "web")
-	port2 := registrySandboxPort(t, sandboxIdentityOf(t, worktree2), "web")
+	port1 := registrySandboxPort(t, harness.SandboxIdentityOf(t, worktree1), "web")
+	port2 := registrySandboxPort(t, harness.SandboxIdentityOf(t, worktree2), "web")
 	if port1 == port2 {
 		t.Errorf("both worktrees received port %d", port1)
 	}
@@ -161,17 +163,17 @@ func TestPortsDistinctAcrossWorktrees(t *testing.T) {
 func TestPortsAvoidUnmanagedSandboxCandidates(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
 
 	// An unmanaged sandbox already publishes 4001.
 	fake.SeedSandbox(t, "unmanaged-11111111", "nginx:latest", "running", nil)
 	fake.SeedPublishedPort(t, "unmanaged-11111111", 4001, 80)
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
-	id := sandboxIdentityOf(t, worktree)
+	id := harness.SandboxIdentityOf(t, worktree)
 	if got := registrySandboxPort(t, id, "web"); got != 4002 {
 		t.Errorf("registry port = %d, want 4002 (4001 is published by an unmanaged sandbox)", got)
 	}
@@ -183,7 +185,7 @@ func TestPortsAvoidUnmanagedSandboxCandidates(t *testing.T) {
 func TestPortsAvoidOccupiedLoopback(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:4001")
 	if err != nil {
@@ -191,11 +193,11 @@ func TestPortsAvoidOccupiedLoopback(t *testing.T) {
 	}
 	defer listener.Close()
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
-	if got := registrySandboxPort(t, sandboxIdentityOf(t, worktree), "web"); got != 4002 {
+	if got := registrySandboxPort(t, harness.SandboxIdentityOf(t, worktree), "web"); got != 4002 {
 		t.Errorf("registry port = %d, want 4002 (4001 is occupied on the loopback)", got)
 	}
 }
@@ -205,16 +207,16 @@ func TestPortsAvoidOccupiedLoopback(t *testing.T) {
 func TestUpCorrectsStaleRegistryRecord(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	// Corrupt the record: the registry now disagrees with the backend.
 	seedRegistry(t, state.PortReservation{Sandbox: id, Name: "web", Guest: 4000, Port: 4005})
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code != 0 {
 		t.Fatalf("up with a stale registry record failed: %s", stderr)
 	}
@@ -240,16 +242,16 @@ func TestUpCorrectsStaleRegistryRecord(t *testing.T) {
 func TestUpFailsRatherThanTakesAnotherReservation(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	// The registry loses our record and holds a conflicting one for the
 	// port the sandbox actually publishes.
 	seedRegistry(t, state.PortReservation{Sandbox: "other-wt2-22222222", Name: "web", Guest: 4000, Port: 4001})
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up took a port another reservation holds")
 	}
@@ -273,7 +275,7 @@ func TestUpFailsRatherThanTakesAnotherReservation(t *testing.T) {
 func TestUpFailsOnExhaustedRange(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
 
 	var records []state.PortReservation
 	for port := 4001; port <= 4099; port++ {
@@ -283,7 +285,7 @@ func TestUpFailsOnExhaustedRange(t *testing.T) {
 	}
 	seedRegistry(t, records...)
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up succeeded with an exhausted port range")
 	}
@@ -303,13 +305,13 @@ func TestUpFailsOnExhaustedRange(t *testing.T) {
 func TestUpFailsClosedOnBackendInspectionFailure(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
 	// An existing sandbox's inspection is what fails; the listing itself
 	// works, so the failure is the port path's, not the find step's.
 	fake.SeedSandbox(t, "unmanaged-11111111", "nginx:latest", "running", nil)
 	t.Setenv("FAKE_MSB_INSPECT_FAIL", "1")
 
-	code, _, stderr := sbxUp(t, worktree)
+	code, _, stderr := harness.SbxUp(t, worktree)
 	if code == 0 {
 		t.Fatal("up succeeded without a backend inspection")
 	}
@@ -326,16 +328,16 @@ func TestUpFailsClosedOnBackendInspectionFailure(t *testing.T) {
 func TestStatusReportsPortsReadOnly(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	// Corrupt the record so status has a discrepancy to report.
 	seedRegistry(t, state.PortReservation{Sandbox: id, Name: "web", Guest: 4000, Port: 4005})
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"status"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"status"}, nil)
 	if code != 0 {
 		t.Fatalf("status failed: %s", stderr)
 	}
@@ -356,11 +358,11 @@ func TestStatusReportsPortsReadOnly(t *testing.T) {
 func TestDisposableRunPublishesNoPorts(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
 
 	var stdout, stderr strings.Builder
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "sh"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "sh"}, nil, &stdout, &stderr)
 	})
 	_ = stdout
 	if code != 0 {
@@ -388,13 +390,13 @@ func TestDisposableRunPublishesNoPorts(t *testing.T) {
 func TestPortPruneKeepsStoppedAndRemovesGone(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
-	if code, _, stderr := sbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"stop"}, nil); code != 0 {
 		t.Fatalf("stop failed: %s", stderr)
 	}
 	// A reservation for a sandbox that no longer exists.
@@ -403,7 +405,7 @@ func TestPortPruneKeepsStoppedAndRemovesGone(t *testing.T) {
 		state.PortReservation{Sandbox: "gone-wt9-99999999", Name: "web", Guest: 4000, Port: 4002},
 	)
 
-	code, stdout, stderr := sbxRun(t, worktree, []string{"port", "prune"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"port", "prune"}, nil)
 	if code != 0 {
 		t.Fatalf("port prune failed: %s", stderr)
 	}
@@ -415,7 +417,7 @@ func TestPortPruneKeepsStoppedAndRemovesGone(t *testing.T) {
 	}
 
 	// rm keeps its reservation too: recreation reuses the same port.
-	if code, _, stderr := sbxRun(t, worktree, []string{"rm", "--yes"}, nil); code != 0 {
+	if code, _, stderr := harness.SbxRun(t, worktree, []string{"rm", "--yes"}, nil); code != 0 {
 		t.Fatalf("rm failed: %s", stderr)
 	}
 	if got := registrySandboxPort(t, id, "web"); got != 4001 {
@@ -423,7 +425,7 @@ func TestPortPruneKeepsStoppedAndRemovesGone(t *testing.T) {
 	}
 
 	// Now the sandbox is gone and prune releases the port.
-	code, stdout, _ = sbxRun(t, worktree, []string{"port", "prune"}, nil)
+	code, stdout, _ = harness.SbxRun(t, worktree, []string{"port", "prune"}, nil)
 	if code != 0 {
 		t.Fatalf("second prune failed")
 	}
@@ -435,7 +437,7 @@ func TestPortPruneKeepsStoppedAndRemovesGone(t *testing.T) {
 	}
 
 	// Prune with nothing to do says so and succeeds.
-	code, stdout, _ = sbxRun(t, worktree, []string{"port", "prune"}, nil)
+	code, stdout, _ = harness.SbxRun(t, worktree, []string{"port", "prune"}, nil)
 	if code != 0 || !strings.Contains(stdout, "nothing to prune") {
 		t.Errorf("prune with an empty registry = %d:\n%s", code, stdout)
 	}
@@ -446,15 +448,15 @@ func TestPortPruneKeepsStoppedAndRemovesGone(t *testing.T) {
 func TestPortPruneFailsSafelyWhenInspectionFails(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
-	if code, _, stderr := sbxUp(t, worktree); code != 0 {
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
 	t.Setenv("FAKE_MSB_LS_FAIL", "1")
 
-	code, _, stderr := sbxRun(t, worktree, []string{"port", "prune"}, nil)
+	code, _, stderr := harness.SbxRun(t, worktree, []string{"port", "prune"}, nil)
 	if code == 0 {
 		t.Fatal("prune succeeded without a backend inspection")
 	}
@@ -472,14 +474,14 @@ func TestPortPruneFailsSafelyWhenInspectionFails(t *testing.T) {
 func TestPlanReportsPortsTentatively(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	worktree, _ := fixtureRepo(t, portsTOML)
-	id := sandboxIdentityOf(t, worktree)
+	worktree, _ := harness.FixtureRepo(t, portsTOML)
+	id := harness.SandboxIdentityOf(t, worktree)
 
 	seedRegistry(t, state.PortReservation{Sandbox: id, Name: "web", Guest: 4000, Port: 4007})
 
 	var stdout, stderr strings.Builder
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr.String())
@@ -496,8 +498,8 @@ func TestPlanReportsPortsTentatively(t *testing.T) {
 	// An unreserved port is reported as chosen at creation.
 	seedRegistry(t)
 	var stdout2, stderr2 strings.Builder
-	code = chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"plan"}, nil, &stdout2, &stderr2)
+	code = harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"plan"}, nil, &stdout2, &stderr2)
 	})
 	if code != 0 {
 		t.Fatalf("second plan failed: %s", stderr2.String())

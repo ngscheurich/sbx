@@ -1,4 +1,4 @@
-package cli
+package run
 
 import (
 	"bytes"
@@ -8,36 +8,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
-
-// runFixture sets up a worktree with sbx.toml, a fake msb, and captured
-// streams, then runs `sbx run` from inside the worktree.
-func runFixture(t *testing.T, toml string, argv ...string) (int, *bytes.Buffer, *bytes.Buffer, testsupport.Log) {
-	t.Helper()
-	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, toml)
-	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), append([]string{"run"}, argv...), strings.NewReader("guest-input\n"), &stdout, &stderr)
-	})
-	return code, &stdout, &stderr, fake
-}
-
-// disposableTOML is a valid configuration for the disposable-run tests.
-const disposableTOML = `
-image = "alpine:3.20"
-cpus = 2
-memory = "2G"
-
-[network]
-policy = "public"
-`
 
 // TestRunSequencePinsBackendCalls checks the exact call sequence and the
 // translated create/exec argv for a disposable run.
 func TestRunSequencePinsBackendCalls(t *testing.T) {
-	code, stdout, stderr, fake := runFixture(t, disposableTOML, "--", "echo", "hello")
+	code, stdout, stderr, fake := harness.RunFixture(t, harness.DisposableTOML, "--", "echo", "hello")
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
 	}
@@ -47,15 +26,15 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 
 	calls := fake.Calls()
 	if len(calls) != 3 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 
 	// context, image inspect, run — in that order; the sandbox lifecycle
 	// is msb run's own behavior, so sbx makes no cleanup calls.
-	if got := calls[0].Args; !equal(got, []string{"context", "--format", "json"}) {
+	if got := calls[0].Args; !harness.Equal(got, []string{"context", "--format", "json"}) {
 		t.Errorf("first call mismatch: %q", got)
 	}
-	if got := calls[1].Args; !equal(got, []string{"image", "inspect", "alpine:3.20", "--format", "json"}) {
+	if got := calls[1].Args; !harness.Equal(got, []string{"image", "inspect", "alpine:3.20", "--format", "json"}) {
 		t.Errorf("second call mismatch: %q", got)
 	}
 	runCall := calls[2].Args
@@ -75,7 +54,7 @@ func TestRunSequencePinsBackendCalls(t *testing.T) {
 	}
 	// The full run argv, image positional included, is compared against
 	// the translation.
-	if !equal(runCall, want) {
+	if !harness.Equal(runCall, want) {
 		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
 	}
 }
@@ -99,7 +78,7 @@ func worktreeOf(t *testing.T, fake testsupport.Log) string {
 // TestRunForwardsGuestStreams checks that guest output reaches sbx's own
 // streams on a successful run.
 func TestRunForwardsGuestStreams(t *testing.T) {
-	_, stdout, stderr, fake := runFixture(t, disposableTOML, "--", "true")
+	_, stdout, stderr, fake := harness.RunFixture(t, harness.DisposableTOML, "--", "true")
 	if !strings.Contains(stderr.String(), "guest-stderr") {
 		t.Errorf("guest stderr did not reach sbx stderr: %q", stderr.String())
 	}
@@ -107,7 +86,7 @@ func TestRunForwardsGuestStreams(t *testing.T) {
 		t.Errorf("guest stdout did not reach sbx stdout: %q", stdout.String())
 	}
 	if calls := fake.Calls(); len(calls) != 3 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 }
 
@@ -123,13 +102,13 @@ shell = "/bin/bash"
 [network]
 policy = "none"
 `
-	_, _, stderr, fake := runFixture(t, toml)
+	_, _, stderr, fake := harness.RunFixture(t, toml)
 	if !strings.Contains(stderr.String(), "guest-stderr") {
 		t.Errorf("guest stderr did not reach sbx stderr: %q", stderr.String())
 	}
 	calls := fake.Calls()
 	if len(calls) != 3 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 	want := []string{"run", "alpine:3.20",
 		"--cpus", "1",
@@ -143,7 +122,7 @@ policy = "none"
 		"--no-tty",
 		"--", "/bin/bash",
 	}
-	if got := calls[2].Args; !equal(got, want) {
+	if got := calls[2].Args; !harness.Equal(got, want) {
 		t.Errorf("shell-mode run argv mismatch:\n got: %q\nwant: %q", got, want)
 	}
 }
@@ -152,10 +131,10 @@ policy = "none"
 // future flags cannot be mistaken for a guest command.
 func TestRunRejectsArgvWithoutSeparator(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "echo", "hi"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "echo", "hi"}, nil, &stdout, &stderr)
 	})
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2 (usage)", code)
@@ -173,16 +152,16 @@ func TestRunRejectsArgvWithoutSeparator(t *testing.T) {
 func TestRunPropagatesGuestExitStatus(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_EXIT", "37")
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "false"}, strings.NewReader(""), &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "false"}, strings.NewReader(""), &stdout, &stderr)
 	})
 	if code != 37 {
 		t.Errorf("exit code = %d, want the guest's 37 (stderr: %s)", code, stderr.String())
 	}
 	if calls := fake.Calls(); len(calls) != 3 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 }
 
@@ -191,10 +170,10 @@ func TestRunPropagatesGuestExitStatus(t *testing.T) {
 func TestRunPropagatesCommandFailure(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_EXEC_FAIL_START", "1")
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code != 127 {
 		t.Errorf("exit code = %d, want 127 (stderr: %s)", code, stderr.String())
@@ -215,14 +194,14 @@ func TestRunPropagatesCommandFailure(t *testing.T) {
 func TestRunCancellationPropagatesStatus(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_EXEC_SLEEP", "30")
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var stdout, stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		done <- chdir(t, worktree, func() int {
-			return Run(ctx, []string{"run", "--", "sleep", "30"}, nil, &stdout, &stderr)
+		done <- harness.Chdir(t, worktree, func() int {
+			return cli.Run(ctx, []string{"run", "--", "sleep", "30"}, nil, &stdout, &stderr)
 		})
 	}()
 	// Wait until the guest is running, then cancel.
@@ -234,7 +213,7 @@ func TestRunCancellationPropagatesStatus(t *testing.T) {
 		t.Errorf("exit code = %d, want 143 from the interrupted guest (stderr: %s)", code, stderr.String())
 	}
 	if calls := fake.Calls(); len(calls) != 3 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 }
 
@@ -243,10 +222,10 @@ func TestRunCancellationPropagatesStatus(t *testing.T) {
 func TestRunRefusesCloudContext(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_CONTEXT_BACKEND", "cloud")
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("run proceeded with a cloud backend")
@@ -265,7 +244,7 @@ func TestRunRefusesCloudContext(t *testing.T) {
 // even a hostile host MSB_BACKEND never reaches the msb subprocess.
 func TestRunForcesLocalBackendInSubprocessEnv(t *testing.T) {
 	t.Setenv("MSB_BACKEND", "cloud")
-	_, _, _, fake := runFixture(t, disposableTOML, "--", "true")
+	_, _, _, fake := harness.RunFixture(t, harness.DisposableTOML, "--", "true")
 	for i, call := range fake.Calls() {
 		if call.Backend != "local" {
 			t.Errorf("call %d (%v) ran with MSB_BACKEND=%q, want local", i, call.Args, call.Backend)
@@ -278,19 +257,19 @@ func TestRunForcesLocalBackendInSubprocessEnv(t *testing.T) {
 func TestRunPullsMissingPrebuiltImage(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("FAKE_MSB_IMAGE_MISSING", "alpine:3.20")
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
 	}
 	calls := fake.Calls()
 	if len(calls) != 4 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
-	if !equal(calls[2].Args, []string{"image", "pull", "alpine:3.20"}) {
+	if !harness.Equal(calls[2].Args, []string{"image", "pull", "alpine:3.20"}) {
 		t.Errorf("expected the pull as the third call, got %q", calls[2].Args)
 	}
 }
@@ -300,25 +279,25 @@ func TestRunPullsMissingPrebuiltImage(t *testing.T) {
 // reaches msb as a --mount-named with its derived name.
 func TestRunMountsProjectVolume(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, projectVolumeTOML)
+	worktree, _ := harness.FixtureRepo(t, projectVolumeTOML)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, strings.NewReader(""), &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, strings.NewReader(""), &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("run with a declared Project volume failed: %s", stderr.String())
 	}
 	calls := fake.Calls()
 	if len(calls) != 4 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 	// context, volume listing, image inspect, run — in that order: the
 	// compatibility check runs before the image or sandbox is touched.
-	if got := calls[1].Args; !equal(got, []string{"volumes", "--format", "json"}) {
+	if got := calls[1].Args; !harness.Equal(got, []string{"volumes", "--format", "json"}) {
 		t.Errorf("second call mismatch: %q", got)
 	}
 	runCall := calls[3].Args
-	want := projectVolumeName(t, worktree, "cache") + ":/cache"
+	want := harness.ProjectVolumeName(t, worktree, "cache") + ":/cache"
 	found := false
 	for i, a := range runCall {
 		if a == "--mount-named" && i+1 < len(runCall) && runCall[i+1] == want {
@@ -336,7 +315,7 @@ func TestRunMountsProjectVolume(t *testing.T) {
 func TestRunTranslatesMountsEnvAndAllowlist(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_TEST_TOKEN", "throwaway-value-7b2f")
-	worktree, _ := fixtureRepo(t, `
+	worktree, _ := harness.FixtureRepo(t, `
 image = "alpine:3.20"
 cpus = 2
 memory = "2G"
@@ -373,15 +352,15 @@ allow = ["example.com", "*.example.org"]
 dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 `)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
 	}
 	calls := fake.Calls()
 	if len(calls) != 3 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 	want := []string{"run", "alpine:3.20",
 		"--cpus", "2",
@@ -407,7 +386,7 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 	// The --secret-conf value is a temporary path; the splice above marks
 	// it so the rest of the argv compares exactly.
 	runCall := calls[2].Args
-	if !equal(spliceGenerated(runCall), want) {
+	if !harness.Equal(harness.SpliceGenerated(runCall), want) {
 		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
 	}
 
@@ -437,35 +416,11 @@ dns_nameservers = ["1.1.1.1", "8.8.8.8"]
 	}
 }
 
-// spliceGenerated replaces the value after each generated-file flag
-// (--secret-conf, --fs-conf) with a placeholder so the argv comparison
-// stays exact elsewhere.
-func spliceGenerated(args []string) []string {
-	for _, flag := range []string{"--secret-conf", "--fs-conf"} {
-		i := indexOf(args, flag)
-		if i >= 0 {
-			tail := append([]string{}, args[i+2:]...)
-			args = append(append(args[:i+1:i+1], "<path>"), tail...)
-		}
-	}
-	return args
-}
-
-// indexOf returns the index of the first occurrence of token, or -1.
-func indexOf(args []string, token string) int {
-	for i, a := range args {
-		if a == token {
-			return i
-		}
-	}
-	return -1
-}
-
 // TestRunMissingSecretEnvFailsBeforeAnything checks that a declared secret
 // whose host variable is unset stops the run before any msb call.
 func TestRunMissingSecretEnvFailsBeforeAnything(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, `
+	worktree, _ := harness.FixtureRepo(t, `
 image = "alpine:3.20"
 cpus = 1
 memory = "1G"
@@ -478,8 +433,8 @@ allow = ["example.com"]
 policy = "public"
 `)
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("run succeeded with a missing secret host variable")
@@ -496,19 +451,19 @@ policy = "public"
 // the worktree root still mounts the root, not the invocation directory.
 func TestRunMountsWorktreeRootFromSubdirectory(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	sub := filepath.Join(worktree, "deep", "nested")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, sub, func() int {
-		return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, sub, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr:\n%s", code, stderr.String())
 	}
-	if !contains(callsOf(fake), "--mount-dir") {
+	if !harness.Contains(callsOf(fake), "--mount-dir") {
 		t.Fatal("no mount recorded")
 	}
 	for _, call := range fake.Calls() {
@@ -534,12 +489,12 @@ func callsOf(fake testsupport.Log) []string {
 // and keeps one it did not name, so sbx must not name them.
 func TestRunLeavesNamingToMsb(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
-	worktree, _ := fixtureRepo(t, disposableTOML)
+	worktree, _ := harness.FixtureRepo(t, harness.DisposableTOML)
 	runOnce := func() {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		code := chdir(t, worktree, func() int {
-			return Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
+		code := harness.Chdir(t, worktree, func() int {
+			return cli.Run(context.Background(), []string{"run", "--", "true"}, nil, &stdout, &stderr)
 		})
 		if code != 0 {
 			t.Fatalf("run failed: %s", stderr.String())
@@ -549,39 +504,8 @@ func TestRunLeavesNamingToMsb(t *testing.T) {
 	runOnce()
 	runOnce()
 	for _, c := range fake.Calls() {
-		if c.Args[0] == "run" && contains(c.Args, "--name") {
+		if c.Args[0] == "run" && harness.Contains(c.Args, "--name") {
 			t.Errorf("sbx named a disposable run; msb keeps named sandboxes: %v", c.Args)
 		}
 	}
-}
-
-// callDump renders recorded calls for failure messages.
-func callDump(calls []testsupport.Call) string {
-	var b strings.Builder
-	for _, c := range calls {
-		b.WriteString("  " + strings.Join(c.Args, " ") + "\n")
-	}
-	return b.String()
-}
-
-func equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// contains reports whether the argument list includes the exact token.
-func contains(args []string, token string) bool {
-	for _, a := range args {
-		if a == token {
-			return true
-		}
-	}
-	return false
 }

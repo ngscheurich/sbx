@@ -1,7 +1,7 @@
 // Fixture tests: the acceptance fixtures are copied into temporary Git
 // repositories and exercised through the real CLI paths, keeping the
 // fixtures in sync with the automated tests.
-package cli
+package build
 
 import (
 	"bytes"
@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
 	"github.com/ngscheurich/sbx/internal/gitx"
+	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
@@ -73,16 +75,16 @@ func copyFile(src, dst string, mode os.FileMode) error {
 // linked worktree and returns the worktree path.
 func fixtureRepoFrom(t *testing.T, fixture string) string {
 	t.Helper()
-	repo := seedRepo(t)
+	repo := harness.SeedRepo(t)
 	worktree := filepath.Join(t.TempDir(), "wt1")
-	git(t, repo, "worktree", "add", worktree, "-b", "feature")
+	harness.Git(t, repo, "worktree", "add", worktree, "-b", "feature")
 	copyFixture(t, fixture, worktree)
-	return resolve(t, worktree)
+	return harness.Resolve(t, worktree)
 }
 
 // fixtureRestrictedDir is the restricted CLI fixture's path relative to this
 // package.
-const fixtureRestrictedDir = "../../fixtures/restricted-cli"
+const fixtureRestrictedDir = "../../../fixtures/restricted-cli"
 
 // TestFixtureRestrictedFailsClosedImageCheck copies the complete fixture and
 // checks that `sbx run` refuses it before any backend call once it declares
@@ -102,8 +104,8 @@ func TestFixtureRestrictedFailsClosedImageCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run", "--", "go", "version"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run", "--", "go", "version"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
 		t.Fatal("run succeeded on the fixture variant, which declares a not-yet-supported field")
@@ -125,8 +127,8 @@ func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
 
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"build"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"build"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("build failed on the verbatim fixture: %s", stderr.String())
@@ -142,16 +144,16 @@ func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
 		"--tag", "sbx-restricted-cli:latest",
 		worktree,
 	}
-	if got := dockerCalls[0].Args; !equal(got, wantBuild) {
+	if got := dockerCalls[0].Args; !harness.Equal(got, wantBuild) {
 		t.Errorf("docker build argv mismatch:\n got: %q\nwant: %q", got, wantBuild)
 	}
 	archive := archiveFromSaveCall(t, dockerCalls[1])
 
 	msbCalls := msbLog.Calls()
 	if len(msbCalls) != 2 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(msbCalls), callDump(msbCalls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(msbCalls), harness.CallDump(msbCalls))
 	}
-	if got := msbCalls[1].Args; !equal(got, []string{"load", "--input", archive}) {
+	if got := msbCalls[1].Args; !harness.Equal(got, []string{"load", "--input", archive}) {
 		t.Errorf("msb load argv mismatch:\n got: %q\nwant the exported archive", got)
 	}
 }
@@ -164,8 +166,8 @@ func TestFixtureRestrictedPlanTranslation(t *testing.T) {
 	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
 
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"plan"}, nil, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("plan failed: %s", stderr.String())
@@ -207,19 +209,19 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := chdir(t, worktree, func() int {
-		return Run(context.Background(), []string{"run"}, strings.NewReader(""), &stdout, &stderr)
+	code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"run"}, strings.NewReader(""), &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("run failed: %s", stderr.String())
 	}
 	calls := fake.Calls()
 	if len(calls) != 4 {
-		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), callDump(calls))
+		t.Fatalf("fake msb saw %d calls:\n%s", len(calls), harness.CallDump(calls))
 	}
 	// The Project volume compatibility check runs between the context
 	// confirmation and the image inspection, before any mutation.
-	if got := calls[1].Args; !equal(got, []string{"volumes", "--format", "json"}) {
+	if got := calls[1].Args; !harness.Equal(got, []string{"volumes", "--format", "json"}) {
 		t.Errorf("second call mismatch: %q", got)
 	}
 	ns := fixtureVolumeNamespace(t, worktree)
@@ -246,7 +248,7 @@ func TestFixtureRestrictedRunTranslation(t *testing.T) {
 		"--no-tty",
 		"--", "/bin/bash",
 	}
-	if !equal(spliceGenerated(runCall), want) {
+	if !harness.Equal(harness.SpliceGenerated(runCall), want) {
 		t.Errorf("run argv mismatch:\n got: %q\nwant: %q", runCall, want)
 	}
 	conf := fake.SecretConf(t, 3)
@@ -271,7 +273,7 @@ func fixtureVolumeNamespace(t *testing.T, worktree string) string {
 
 // fixtureStatefulDir is the stateful web fixture's path relative to this
 // package.
-const fixtureStatefulDir = "../../fixtures/stateful-web"
+const fixtureStatefulDir = "../../../fixtures/stateful-web"
 
 // TestFixtureStatefulWebUpAndPorts copies the complete fixture into two
 // worktrees of one repository and checks `sbx up` across them: identity
@@ -285,14 +287,14 @@ func TestFixtureStatefulWebUpAndPorts(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	repo := seedRepo(t)
+	repo := harness.SeedRepo(t)
 
 	variant := testsupport.FixtureWithoutLines(t,
 		filepath.Join(fixtureStatefulDir, "sbx.toml"), "image_check")
 	worktrees := make([]string, 2)
 	for i := range worktrees {
 		wt := filepath.Join(t.TempDir(), fmt.Sprintf("wt%d", i+1))
-		git(t, repo, "worktree", "add", wt, "-b", fmt.Sprintf("feature%d", i+1))
+		harness.Git(t, repo, "worktree", "add", wt, "-b", fmt.Sprintf("feature%d", i+1))
 		copyFixture(t, fixtureStatefulDir, wt)
 		if err := os.WriteFile(filepath.Join(wt, "sbx.toml"), []byte(variant), 0o644); err != nil {
 			t.Fatal(err)
@@ -305,11 +307,11 @@ func TestFixtureStatefulWebUpAndPorts(t *testing.T) {
 	for i, wt := range worktrees {
 		// The first up creates; the second reuses the same identity.
 		for round := 0; round < 2; round++ {
-			code, stdout, stderr := sbxUp(t, wt)
+			code, stdout, stderr := harness.SbxUp(t, wt)
 			if code != 0 {
 				t.Fatalf("up in worktree %d (round %d) failed: %s", i+1, round+1, stderr)
 			}
-			id := sandboxIdentityOf(t, wt)
+			id := harness.SandboxIdentityOf(t, wt)
 			if !strings.Contains(stdout, "persistent sandbox: "+id) {
 				t.Errorf("up in worktree %d does not report the identity:\n%s", i+1, stdout)
 			}
