@@ -4,11 +4,13 @@
 package up
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ngscheurich/sbx/internal/cli"
 	"github.com/ngscheurich/sbx/internal/harness"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
@@ -890,3 +892,51 @@ const (
 	exitFailure = 1
 	exitUsage   = 2
 )
+
+// TestConcurrentRmWaitsForBootstrap checks that rm holds the per-sandbox
+// lock: a removal started while another process is mid-bootstrap waits for
+// it instead of tearing the sandbox down under the bootstrap, and both
+// commands then succeed.
+func TestConcurrentRmWaitsForBootstrap(t *testing.T) {
+	worktree, fake := harness.PersistentFixture(t, bootstrapTOML)
+	t.Setenv("FAKE_MSB_EXEC_SLEEP", "1")
+
+	upDone := make(chan struct {
+		code   int
+		stderr string
+	}, 1)
+	go func() {
+		var stdout, stderr strings.Builder
+		code := harness.Chdir(t, worktree, func() int {
+			return cli.Run(context.Background(), []string{"up"}, nil, &stdout, &stderr)
+		})
+		upDone <- struct {
+			code   int
+			stderr string
+		}{code, stderr.String()}
+	}()
+
+	// The sixth call is the bootstrap exec, which sleeps: the up now holds
+	// the lock inside its bootstrap.
+	fake.Wait(t, 6)
+
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"rm", "--yes"}, nil)
+	if code != 0 {
+		t.Fatalf("rm failed: %s", stderr)
+	}
+	if !strings.Contains(stdout, "removed.") {
+		t.Errorf("rm does not report the removal:\n%s", stdout)
+	}
+
+	r := <-upDone
+	if r.code != 0 {
+		t.Fatalf("up failed while rm waited for the lock: %s", r.stderr)
+	}
+
+	// The removal happened after the bootstrap: the fake's call log ends
+	// with the remove, and the sandbox record is gone.
+	calls := fake.Calls()
+	if last := calls[len(calls)-1].Args; last[0] != "remove" {
+		t.Errorf("the last backend call is %q, want remove", last[0])
+	}
+}
