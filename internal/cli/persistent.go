@@ -39,8 +39,9 @@ import (
 
 // runUp implements `sbx up [--allow-stale] [--retry-bootstrap]`: create the
 // persistent sandbox once, or start it when stopped, bootstrapping each new
-// sandbox, and refuse drift unless --allow-stale. An incomplete Bootstrap is
-// reported, never silently retried: only --retry-bootstrap runs it again.
+// sandbox, and refuse drift unless --allow-stale. An incomplete or changed
+// Bootstrap is reported, never silently retried: only --retry-bootstrap
+// runs it again.
 func runUp(ctx context.Context, args []string, out *output) int {
 	flags, err := parsePersistentFlags("up", args, []string{"--allow-stale", "--retry-bootstrap"})
 	if err != nil {
@@ -605,9 +606,13 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	if err != nil {
 		return "", bootstrapNotDeclared, err
 	}
-	if boot == bootstrapIncomplete && retryBootstrap {
+	// --retry-bootstrap runs the current definition for an incomplete or
+	// a changed Bootstrap — the definition that ran no longer matching
+	// sbx.toml is exactly the case the flag exists for — and records
+	// completion only on success.
+	if retryBootstrap && (boot == bootstrapIncomplete || boot == bootstrapChanged) {
 		if err := runBootstrap(ctx, box, p, s.CreatedAt, out); err != nil {
-			return action, bootstrapIncomplete, &bootstrapFailure{err}
+			return action, boot, &bootstrapFailure{err}
 		}
 		action += "; bootstrap ran again and its completion was recorded"
 		boot = bootstrapComplete

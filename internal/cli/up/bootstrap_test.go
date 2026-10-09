@@ -408,6 +408,42 @@ func TestChangedBootstrapReportedWithoutDrift(t *testing.T) {
 	}
 }
 
+// TestRetryBootstrapRerunsChangedDefinition checks that --retry-bootstrap
+// runs the current definition when the recorded one no longer matches —
+// the flag is the only lever that escapes a changed Bootstrap without
+// destroying the sandbox — and records completion for the new hash, so a
+// later plain up reports a complete Bootstrap instead of a changed one.
+func TestRetryBootstrapRerunsChangedDefinition(t *testing.T) {
+	worktree, fake := harness.PersistentFixture(t, bootstrapTOML)
+	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
+		t.Fatalf("first up failed: %s", stderr)
+	}
+	changed := strings.Replace(bootstrapTOML, "echo bootstrapped", "echo reconfigured", 1)
+	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	before := len(execCalls(fake))
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"up", "--retry-bootstrap"}, nil)
+	if code != 0 {
+		t.Fatalf("up --retry-bootstrap failed: %s", stderr)
+	}
+	if !strings.Contains(stdout, "bootstrap ran again and its completion was recorded") {
+		t.Errorf("up does not report the retry:\n%s", stdout)
+	}
+	if got := len(execCalls(fake)) - before; got != 1 {
+		t.Errorf("bootstrap exec calls during retry = %d, want 1", got)
+	}
+
+	code, stdout, stderr = harness.SbxUp(t, worktree)
+	if code != 0 {
+		t.Fatalf("second up failed: %s", stderr)
+	}
+	if strings.Contains(stdout, "definition has changed") {
+		t.Errorf("the retried bootstrap was not recorded:\n%s", stdout)
+	}
+}
+
 // TestConcurrentUpSerializesCreationAndBootstrap checks the per-sandbox
 // lock: a concurrent up waits with a message, and the second caller — once
 // it holds the lock — sees the completed bootstrap and does not run it
