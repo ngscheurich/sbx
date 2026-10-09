@@ -445,6 +445,7 @@ func TestLoadPortValidationFailures(t *testing.T) {
 		{"guest too low", minimal + "\n[ports.web]\nguest = 0", "ports.web: guest is required"},
 		{"guest too high", minimal + "\n[ports.web]\nguest = 65536", "ports.web: guest is required"},
 		{"bad name", minimal + "\n[ports.Web]\nguest = 4000", `ports: name "Web"`},
+		{"duplicate guest", minimal + "\n[ports.web]\nguest = 8080\n\n[ports.metrics]\nguest = 8080", "ports.web: guest 8080 is already declared as ports.metrics"},
 		{"policy none", `
 image = "alpine"
 cpus = 1

@@ -464,15 +464,31 @@ func (c *Config) validateSecrets() []string {
 
 // validatePorts checks each [ports.<name>] entry: the name's shape, the
 // required guest port, and the policy="none" conflict — a network that
-// allows no traffic at all cannot serve a published port.
+// allows no traffic at all cannot serve a published port. Guest ports must
+// be unique across names: one guest port serves one named service, and a
+// duplicate would wedge reconcile after the sandbox exists, so it is
+// rejected here, before any resource changes.
 func (c *Config) validatePorts() []string {
 	var problems []string
-	for name, p := range c.Ports {
+	names := make([]string, 0, len(c.Ports))
+	for name := range c.Ports {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	guests := make(map[int]string, len(names))
+	for _, name := range names {
+		p := c.Ports[name]
 		if !volumeNameRe.MatchString(name) {
 			problems = append(problems, fmt.Sprintf("ports: name %q must match [a-z][a-z0-9_]*", name))
 		}
 		if p.Guest < 1 || p.Guest > 65535 {
 			problems = append(problems, fmt.Sprintf("ports.%s: guest is required and must be a TCP port between 1 and 65535", name))
+			continue
+		}
+		if first, seen := guests[p.Guest]; seen {
+			problems = append(problems, fmt.Sprintf("ports.%s: guest %d is already declared as ports.%s; one named service per guest port", name, p.Guest, first))
+		} else {
+			guests[p.Guest] = name
 		}
 	}
 	if len(c.Ports) > 0 && c.Network.Policy == "none" {
