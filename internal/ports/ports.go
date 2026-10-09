@@ -16,6 +16,7 @@ package ports
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -187,7 +188,7 @@ func Reconcile(sandbox string, declared []Declared, actual []msb.PublishedPort) 
 		}
 		sort.Ints(reservedHosts)
 		sort.Ints(desiredHosts)
-		if sameInts(reservedHosts, desiredHosts) {
+		if slices.Equal(reservedHosts, desiredHosts) {
 			return records, nil
 		}
 
@@ -295,17 +296,4 @@ func FormatAssignments(assigns []Assignment) string {
 		fmt.Fprintf(&b, "%s: 127.0.0.1:%d -> guest %d\n", a.Name, a.Host, a.Guest)
 	}
 	return b.String()
-}
-
-// sameInts reports whether two sorted int slices are equal.
-func sameInts(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

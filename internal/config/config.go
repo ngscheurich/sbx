@@ -23,10 +23,6 @@ const supportedFields = `image, cpus, memory, shell, image_check, [workspace],
 [mounts], [volumes], [ports], [env], [secrets], [bootstrap], [aliases],
 [network] (with allow and dns_nameservers), and [build]`
 
-// notYetSupported are field names that the spec defines but this build does
-// not translate yet. Declaring any of them is an error, not a warning.
-var notYetSupported = map[string]struct{}{}
-
 // Config is the validated content of one worktree's sbx.toml.
 type Config struct {
 	Image     string                  `toml:"image"`
@@ -211,16 +207,8 @@ func strictFields(md toml.MetaData) error {
 	if len(md.Undecoded()) == 0 {
 		return nil
 	}
-	keys := md.Undecoded()
-	for _, key := range keys {
-		for _, part := range key {
-			if _, unsupported := notYetSupported[part]; unsupported {
-				return fmt.Errorf("sbx.toml: %q is declared but not supported yet; this build of sbx accepts %s only", part, supportedFields)
-			}
-		}
-	}
 	var names []string
-	for _, key := range keys {
+	for _, key := range md.Undecoded() {
 		names = append(names, `"`+key.String()+`"`)
 	}
 	return fmt.Errorf("sbx.toml: unknown field(s) %s; this build of sbx accepts %s", strings.Join(names, ", "), supportedFields)

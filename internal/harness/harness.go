@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -171,37 +172,13 @@ func CallDump(calls []testsupport.Call) string {
 }
 
 // Equal reports whether the argument lists match element for element.
-func Equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
+func Equal(a, b []string) bool { return slices.Equal(a, b) }
 
 // Contains reports whether the argument list includes the exact token.
-func Contains(args []string, token string) bool {
-	for _, a := range args {
-		if a == token {
-			return true
-		}
-	}
-	return false
-}
+func Contains(args []string, token string) bool { return slices.Contains(args, token) }
 
 // IndexOf returns the index of the first occurrence of token, or -1.
-func IndexOf(args []string, token string) int {
-	for i, a := range args {
-		if a == token {
-			return i
-		}
-	}
-	return -1
-}
+func IndexOf(args []string, token string) int { return slices.Index(args, token) }
 
 // SpliceGenerated replaces the volatile argument of every generated-file
 // flag with a stable placeholder, so expectations can pin the rest of the

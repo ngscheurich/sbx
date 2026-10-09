@@ -19,6 +19,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ngscheurich/sbx/internal/subproc"
 )
 
 // waitDelay is how long a canceled docker subprocess may linger before it
@@ -122,12 +124,8 @@ func notFoundError() error {
 }
 
 // firstLine returns the first non-empty line of a string.
+// firstLine reads the first readable line of a subprocess output stream,
+// with the adapter's own nothing-to-read fallback.
 func firstLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			return line
-		}
-	}
-	return "docker failed without output"
+	return subproc.FirstLine(s, "docker failed without output")
 }

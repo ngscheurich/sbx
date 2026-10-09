@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ngscheurich/sbx/internal/subproc"
+
 	"golang.org/x/term"
 )
 
@@ -759,12 +761,8 @@ func FormatCPUs(cpus float64) string {
 }
 
 // firstLine returns the first non-empty line of a string.
+// firstLine reads the first readable line of a subprocess output stream,
+// with the adapter's own nothing-to-read fallback.
 func firstLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			return line
-		}
-	}
-	return "msb failed without output"
+	return subproc.FirstLine(s, "msb failed without output")
 }

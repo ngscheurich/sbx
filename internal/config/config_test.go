@@ -374,26 +374,6 @@ func TestLoadRejectsEmptyBootstrap(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsNotYetSupportedFields(t *testing.T) {
-	// Every spec field this build translates is supported, so the table is
-	// empty; the test stays as the harness for any future deferral.
-	tests := map[string]string{}
-	for name, content := range tests {
-		t.Run(name, func(t *testing.T) {
-			_, err := Load(write(t, content+"\n"))
-			if err == nil {
-				t.Fatalf("Load succeeded for unsupported field %q", name)
-			}
-			if !strings.Contains(err.Error(), "not supported yet") {
-				t.Errorf("error = %q, want it to say the field is not supported yet", err.Error())
-			}
-			if !strings.Contains(err.Error(), name) {
-				t.Errorf("error = %q, want it to name %q", err.Error(), name)
-			}
-		})
-	}
-}
-
 // TestLoadImageCheck checks that image_check parses as the project-owned
 // guest script's path, and that declaring it empty is rejected: an empty
 // declaration would silently mean "no check".

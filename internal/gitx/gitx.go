@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/ngscheurich/sbx/internal/subproc"
 )
 
 // Info holds the absolute, symlink-free Git paths sbx derives names from.
@@ -82,12 +84,8 @@ func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
 }
 
 // firstLine returns the first non-empty line of a command's output.
+// firstLine reads the first readable line of a subprocess output stream,
+// with the adapter's own nothing-to-read fallback.
 func firstLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			return line
-		}
-	}
-	return "git failed without output"
+	return subproc.FirstLine(s, "git failed without output")
 }

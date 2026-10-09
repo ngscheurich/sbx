@@ -524,12 +524,6 @@ exec|run)
   fi
   exit "${FAKE_MSB_EXIT:-0}"
   ;;
-remove)
-  if [ -n "$FAKE_MSB_RM_FAIL" ]; then
-    echo "sbx-fake-msb: remove failed" >&2
-    exit 1
-  fi
-  ;;
 esac
 exit 0
 `
