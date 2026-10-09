@@ -43,7 +43,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, out *out
 	box := msb.CLI{}
 	fatal := func(err error) int { return out.fail(err) }
 
-	info, cfg, err := discoverConfig(ctx)
+	info, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return fatal(err)
 	}

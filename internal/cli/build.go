@@ -37,7 +37,7 @@ func runBuild(ctx context.Context, args []string, out *output) int {
 
 	fatal := func(err error) int { return out.fail(err) }
 
-	info, cfg, err := discoverConfig(ctx)
+	info, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return fatal(err)
 	}

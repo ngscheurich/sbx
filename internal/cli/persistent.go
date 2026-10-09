@@ -53,7 +53,7 @@ func runUp(ctx context.Context, args []string, out *output) int {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	p, err := preparePersistent(ctx)
+	p, err := preparePersistent(ctx, out)
 	if err != nil {
 		return out.fail(err)
 	}
@@ -88,7 +88,7 @@ func runExec(ctx context.Context, args []string, stdin io.Reader, out *output) i
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	p, err := preparePersistent(ctx)
+	p, err := preparePersistent(ctx, out)
 	if err != nil {
 		return out.fail(err)
 	}
@@ -123,7 +123,7 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 	if _, err := parsePersistentFlags("status", args, nil); err != nil {
 		return out.usagef("%v", err)
 	}
-	info, cfg, err := discoverConfig(ctx)
+	info, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return out.fail(err)
 	}
@@ -412,8 +412,8 @@ type persistent struct {
 // preparePersistent discovers and validates everything the mutating
 // persistent commands need, before any backend call: the fail-closed
 // preflight, the declared secrets' host variables, and the translation.
-func preparePersistent(ctx context.Context) (*persistent, error) {
-	info, cfg, err := discoverConfig(ctx)
+func preparePersistent(ctx context.Context, out *output) (*persistent, error) {
+	info, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return nil, err
 	}

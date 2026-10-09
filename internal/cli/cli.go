@@ -43,6 +43,13 @@ type output struct {
 	// non-color decoration (table borders) on top of what the forced
 	// NoTTY profile already strips.
 	plain bool
+	// discovered caches the invocation's one configuration load, so the
+	// alias-shadow check and the command's own runner share a single git
+	// spawn and sbx.toml parse.
+	discovered bool
+	info       gitx.Info
+	cfg        config.Config
+	cfgErr     error
 }
 
 // newOutput wraps the writers Run received: the one place sbx's output
@@ -264,7 +271,7 @@ const maxAliasDepth = 2
 // the builtin runs without the warning rather than failing — commands that
 // need the configuration report its errors themselves.
 func warnIfShadowed(ctx context.Context, cmd string, out *output) {
-	_, cfg, err := discoverConfig(ctx)
+	_, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return
 	}
@@ -282,7 +289,7 @@ func dispatchUnknown(ctx context.Context, cmd string, args []string, stdin io.Re
 	if depth >= maxAliasDepth {
 		return out.usagef("alias chain too deep at %q; an alias may expand through one other alias", cmd)
 	}
-	_, cfg, err := discoverConfig(ctx)
+	_, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return out.fail(err)
 	}
@@ -296,7 +303,7 @@ func dispatchUnknown(ctx context.Context, cmd string, args []string, stdin io.Re
 }
 
 func runPlan(ctx context.Context, out *output) int {
-	info, cfg, err := discoverConfig(ctx)
+	info, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return out.fail(err)
 	}
@@ -476,8 +483,19 @@ func checkProjectVolumes(ctx context.Context, box msb.CLI, declared []volumes.De
 }
 
 // discoverConfig finds the worktree root from the current directory and
-// loads that checkout's validated sbx.toml.
-func discoverConfig(ctx context.Context) (gitx.Info, config.Config, error) {
+// loads that checkout's validated sbx.toml, once per invocation: every
+// caller shares the result, so an invocation pays the git spawn and the
+// parse exactly once no matter how many layers need the configuration.
+func (out *output) discoverConfig(ctx context.Context) (gitx.Info, config.Config, error) {
+	if !out.discovered {
+		out.info, out.cfg, out.cfgErr = discoverWorktreeConfig(ctx)
+		out.discovered = true
+	}
+	return out.info, out.cfg, out.cfgErr
+}
+
+// discoverWorktreeConfig does the discovery work discoverConfig caches.
+func discoverWorktreeConfig(ctx context.Context) (gitx.Info, config.Config, error) {
 	info, err := gitx.Discover(ctx, ".")
 	if err != nil {
 		return gitx.Info{}, config.Config{}, err
