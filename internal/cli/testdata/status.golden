@@ -1,6 +1,6 @@
 persistent sandbox: <sandbox-id>
 status: Running
-created at: 2024-01-01T00:00:00Z
+created at: 2024-01-01 00:00
 created from image contents: sha256:seeded
 drift (up and exec refuse this; status does not):
   no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted

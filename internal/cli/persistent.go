@@ -155,7 +155,7 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 		return exitOK
 	}
 	fmt.Fprintf(out.stdout, "status: %s\n", s.Status)
-	fmt.Fprintf(out.stdout, "created at: %s\n", s.CreatedAt)
+	fmt.Fprintf(out.stdout, "created at: %s\n", formatCreated(s.CreatedAt))
 	if eff := s.EffectiveConfig(); eff.ManifestDigest != "" {
 		fmt.Fprintf(out.stdout, "created from image contents: %s\n", eff.ManifestDigest)
 	}
@@ -485,10 +485,10 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			return "", bootstrapNotDeclared, err
 		}
 		cleanup, err := materializeGeneratedFiles(&p.tr)
+		defer cleanup()
 		if err != nil {
 			return "", bootstrapNotDeclared, err
 		}
-		defer cleanup()
 		// Declared ports are reserved — or reused from the registry — before
 		// anything is created; a failure here changes nothing at all.
 		assigns, err := reservePorts(ctx, box, p)
@@ -637,8 +637,13 @@ func driftReport(ctx context.Context, box msb.CLI, p *persistent) (notes []strin
 	digest := ""
 	if info, err := box.ImageInspect(ctx, p.cfg.Image); err == nil {
 		digest = info.ManifestDigest
+	} else {
+		// Drift fails closed on an uninspectable image; the reason travels
+		// with the report so the refusal is diagnosable without re-running
+		// msb by hand.
+		notes = append(notes, fmt.Sprintf("the current image %s could not be inspected (%v), so its contents are unconfirmed", p.cfg.Image, err))
 	}
-	return nil, state.Drift(snap, state.DefinitionOf(p.tr), digest), nil
+	return notes, state.Drift(snap, state.DefinitionOf(p.tr), digest), nil
 }
 
 // findSandbox locates the named sandbox in the backend's listing. A
@@ -698,10 +703,18 @@ func ensureImage(ctx context.Context, box msb.CLI, cfg config.Config) (string, e
 // points the translation at them. The returned cleanup removes both.
 func materializeGeneratedFiles(tr *translate.Translation) (func(), error) {
 	var paths []string
+	// The cleanup is built first and returned even on failure: a second
+	// write that fails must not leak the first file, which holds secret
+	// names and host-variable references, into the shared temp directory.
+	cleanup := func() {
+		for _, p := range paths {
+			os.Remove(p)
+		}
+	}
 	if tr.SecretConfYAML != "" {
 		path, err := writeTempFile("sbx-secrets-*.yaml", tr.SecretConfYAML)
 		if err != nil {
-			return nil, fmt.Errorf("writing the secret map: %w", err)
+			return cleanup, fmt.Errorf("writing the secret map: %w", err)
 		}
 		tr.Options.SecretConf = path
 		paths = append(paths, path)
@@ -709,16 +722,12 @@ func materializeGeneratedFiles(tr *translate.Translation) (func(), error) {
 	if tr.FsConfYAML != "" {
 		path, err := writeTempFile("sbx-fs-conf-*.yaml", tr.FsConfYAML)
 		if err != nil {
-			return nil, fmt.Errorf("writing the filesystem configuration: %w", err)
+			return cleanup, fmt.Errorf("writing the filesystem configuration: %w", err)
 		}
 		tr.Options.FsConf = path
 		paths = append(paths, path)
 	}
-	return func() {
-		for _, p := range paths {
-			os.Remove(p)
-		}
-	}, nil
+	return cleanup, nil
 }
 
 // renderDrift formats drift for an error or report: any standalone notes
