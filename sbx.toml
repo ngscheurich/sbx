@@ -49,5 +49,5 @@ read_only = true
 policy = "public"
 
 [aliases]
-sh = "exec -- sh"
+sh = "exec -- bash"
 pi = "exec -- pi"
