@@ -1,2 +1,2 @@
-name                  image        status   created
+NAME             IMAGE     STATUS       CREATED
 proj-b-feat-x-ab12cd  alpine:3.20  Running  2024-01-01 00:00

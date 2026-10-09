@@ -89,9 +89,10 @@ func TestWritersStripAllDecorationWhenPlain(t *testing.T) {
 }
 
 // TestTablePlainDropsBorders pins the one non-color decoration sbx
-// renders: a bordered table at a terminal, and the same words without the
-// border glyphs under --plain. Alignment survives: the empty border keeps
-// the cell padding.
+// renders: a bordered table at a terminal, and the same words
+// without the border glyphs under --plain. Alignment and the header's
+// uppercase survive — the header words are content, and --no-color must
+// stay byte-identical to --plain — while the frame does not.
 func TestTablePlainDropsBorders(t *testing.T) {
 	headers := []string{"name", "status"}
 	rows := [][]string{{"demo", "Running"}}
@@ -100,10 +101,10 @@ func TestTablePlainDropsBorders(t *testing.T) {
 		t.Errorf("table rendered without borders:\n%s", bordered)
 	}
 	plainTbl := Table(true, headers, rows)
-	if strings.ContainsAny(plainTbl, "┌┬┐│├┼┤└┴┘─") {
+	if strings.ContainsAny(plainTbl, "┌┬┐│├┼┤└┴┘─┏┳┓┃┣╋┫┗┻┛━") {
 		t.Errorf("plain table kept border glyphs:\n%s", plainTbl)
 	}
-	for _, want := range []string{"name", "status", "demo", "Running"} {
+	for _, want := range []string{"NAME", "STATUS", "demo", "Running"} {
 		if !strings.Contains(plainTbl, want) {
 			t.Errorf("plain table lost the word %q:\n%s", want, plainTbl)
 		}

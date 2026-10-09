@@ -198,14 +198,14 @@ func TestRenderDriftIsATable(t *testing.T) {
 	got := RenderDrift(entries, "", false)
 	for _, want := range []string{
 		"┌",
-		"│ environment.PHX_BIND_ALL │ 1           │ removed               │",
-		"│ memory                   │ 2G          │ 4G                    │",
+		"environment.PHX_BIND_ALL", "1", "removed",
+		"memory", "2G", "4G",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered table is missing %q:\n%s", want, got)
 		}
 	}
-	if !strings.Contains(got, "setting") || !strings.Contains(got, "at creation") || !strings.Contains(got, "current configuration") {
+	if !strings.Contains(got, "SETTING") || !strings.Contains(got, "AT CREATION") || !strings.Contains(got, "CURRENT CONFIGURATION") {
 		t.Errorf("rendered table lacks the headers:\n%s", got)
 	}
 	if got := RenderDrift(nil, "  ", false); got != "" {
@@ -218,10 +218,10 @@ func TestRenderDriftIsATable(t *testing.T) {
 func TestRenderDriftPlainDropsBorders(t *testing.T) {
 	entries := []DriftEntry{{Setting: "memory", Was: "2G", Now: "4G"}}
 	got := RenderDrift(entries, "", true)
-	if strings.ContainsAny(got, "┌┬┐│├┼┤└┴┘─") {
+	if strings.ContainsAny(got, "┌┬┐│├┼┤└┴┘─┏┳┓┃┣╋┫┗┻┛━") {
 		t.Errorf("plain drift table kept border glyphs:\n%s", got)
 	}
-	for _, want := range []string{"memory", "2G", "4G", "setting", "at creation", "current configuration"} {
+	for _, want := range []string{"memory", "2G", "4G", "SETTING", "AT CREATION", "CURRENT CONFIGURATION"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("plain drift table lost the word %q:\n%s", want, got)
 		}

@@ -62,7 +62,7 @@ func TestPlainListPlainGolden(t *testing.T) {
 		t.Fatalf("exit code = %d (stderr: %s)", code, stderr.String())
 	}
 	out := stdout.String()
-	if strings.ContainsAny(out, "┌┬┐│├┼┤└┴┘─") || strings.Contains(out, "\x1b[") {
+	if strings.ContainsAny(out, "┌┬┐│├┼┤└┴┘─┏┳┓┃┣╋┫┗┻┛━") || strings.Contains(out, "\x1b[") {
 		t.Errorf("--plain list kept decoration:\n%q", out)
 	}
 	testsupport.Golden(t, "testdata/list-plain.golden", stdout.Bytes())
