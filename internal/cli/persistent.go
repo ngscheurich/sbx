@@ -1,6 +1,7 @@
 // Persistent-sandbox commands: up, exec, status, logs, stop, and rm manage
-// the one stable Sandbox identity each worktree owns (ADR-0005), created
-// once and reused afterward (ADR-0002). Three safety rules shape every
+// the one stable Sandbox identity each worktree owns — derived from the Git
+// layout, never from editable configuration — created once and reused
+// afterward. Three safety rules shape every
 // path here: sbx never adopts a same-named sandbox it did not create, never
 // recreates a drifted sandbox — that could destroy private data — and never
 // removes a Project volume or port reservation when removing a sandbox.
@@ -8,9 +9,9 @@
 // Image checks gate both paths here: the creation path runs the declared
 // check against the image's contents before creating, and an existing
 // sandbox's own image is checked even with --allow-stale, failing closed
-// when its contents cannot be re-checked (ADR-0004, imagecheck.go).
+// when its contents cannot be re-checked (imagecheck.go).
 // Declared Project volumes are checked for compatibility with the
-// backend's existing volumes before any creation (ADR-0003), and declared
+// backend's existing volumes before any creation, and declared
 // ports are reserved before creation and reconciled with the backend's
 // inspection report after it (ports.go). Bootstrap runs here: once after
 // each creation, recorded in host state only on success, and retried only
@@ -480,7 +481,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			return "", bootstrapNotDeclared, err
 		}
 		// The declared image check gates the image before anything is
-		// created from it (ADR-0004).
+		// created from it.
 		if err := ensureImageChecked(ctx, box, p.cfg, p.info.WorktreeRoot, p.id.Sandbox, out); err != nil {
 			return "", bootstrapNotDeclared, err
 		}
@@ -553,7 +554,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	}
 
 	// Even with --allow-stale, the sandbox's own image must have passed
-	// the declared image check for the current script (ADR-0004): an
+	// the declared image check for the current script: an
 	// unmet or unverifiable check refuses use without touching the
 	// sandbox or its data.
 	if err := ensureSandboxImageChecked(ctx, box, p, s.EffectiveConfig().ManifestDigest, out); err != nil {
@@ -574,7 +575,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		action = "already running"
 	} else {
 		// msb re-resolves each secret from its own environment on every
-		// start (verified on a real host, ticket 01), so a restart carries
+		// start (verified on a real host), so a restart carries
 		// the declared host values again through the subprocess environment;
 		// preparePersistent has already refused any missing variable before
 		// any resource changed.

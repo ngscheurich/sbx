@@ -2,7 +2,7 @@
 // contents passed the project's image-check script. A record is keyed by
 // the image's manifest digest and the script's content hash — never by tag
 // alone — so a repointed tag or an edited script is never covered by an
-// old pass (ADR-0004). The records are machine-scoped: they describe image
+// old pass. The records are machine-scoped: they describe image
 // contents, not a worktree or sandbox.
 package state
 

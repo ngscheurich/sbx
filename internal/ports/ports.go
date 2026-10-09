@@ -4,7 +4,7 @@
 // the backend actually reports, and pruning reservations for sandboxes
 // that no longer exist.
 //
-// The rules come from the spec's Port reservations section: a sandbox
+// The rules: a sandbox
 // reuses its reservations or picks from 4001–4099; a free-port probe is
 // not a reservation; candidates must also avoid ports the backend's
 // existing sandboxes publish, because msb can accept a duplicate published

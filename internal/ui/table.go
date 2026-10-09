@@ -5,7 +5,7 @@
 // writers strip the bold wherever color does not survive.
 //
 // plain drops the border glyphs: they are non-color decoration, the class
-// of output only the --plain accessibility lever removes (ADR-0007).
+// of output only the --plain accessibility lever removes.
 // Cell text itself is content and always renders, so a plain table keeps
 // every word the bordered one shows.
 package ui

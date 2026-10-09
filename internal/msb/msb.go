@@ -1,14 +1,14 @@
 // Package msb is sbx's adapter seam for the microsandbox CLI: every
 // backend-affecting action runs through msb as a subprocess with the local
-// backend forced in its environment (ADR-0006). sbx never falls back to
-// another backend and never swallows a subprocess error.
+// backend forced in its environment, so no inherited profile selection can
+// point sbx at another backend. sbx never falls back and never swallows a
+// subprocess error.
 //
 // Translation always uses msb's long flag spellings (--name, --cpus,
 // --mount-dir, ...) for clarity; short aliases are never emitted.
 //
-// Flag spellings and output schemas follow the observed msb 0.7.3 behavior
-// recorded in the spec's backend verification; behaviors not yet confirmed
-// on a real host are marked UNVERIFIED.
+// Flag spellings and output schemas follow observed msb 0.7.3 behavior;
+// behaviors not yet confirmed on a real host are marked UNVERIFIED.
 //
 // The persistent-sandbox commands (up, exec, status, logs, stop, rm) drive
 // Create, Exec, Inspect, List, Start, Stop, Logs, and Remove; plan and run

@@ -4,7 +4,7 @@
 // success, bound to the sandbox's incarnation and the definition's hash;
 // a failed, interrupted, or unrecorded Bootstrap leaves the sandbox
 // incomplete — never retried by plain `up`, repairable through `exec`,
-// and retried only by `up --retry-bootstrap` (ADR-0002). A disposable run
+// and retried only by `up --retry-bootstrap`. A disposable run
 // instead wraps its guest command so Bootstrap runs first, and a failure
 // ends the run: msb removes the auto-named one-shot sandbox, Sandbox
 // volumes and all.

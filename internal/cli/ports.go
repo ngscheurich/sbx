@@ -1,8 +1,7 @@
 // Port reservations in the CLI: the shared helpers the persistent-sandbox
 // commands use to reserve and reconcile a sandbox's published ports, the
-// read-only port report for status, and `sbx port prune`. The rules come
-// from the spec's Port reservations section; the policy itself lives in
-// the ports package.
+// read-only port report for status, and `sbx port prune`. The policy itself
+// lives in the ports package.
 package cli
 
 import (

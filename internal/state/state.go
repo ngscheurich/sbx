@@ -6,7 +6,8 @@
 // sandbox was
 // created from so sbx can report Creation drift without ever recreating a
 // sandbox that holds private data; markers record a Bootstrap success bound
-// to the sandbox incarnation that ran it (ADR-0002).
+// to the sandbox incarnation that ran it, so a recreated sandbox never
+// inherits an old completion.
 package state
 
 import (

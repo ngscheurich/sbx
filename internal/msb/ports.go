@@ -1,6 +1,6 @@
 // Published-port inspection: once a sandbox exists, the ports `msb inspect
-// --format json` reports are authoritative (see the spec's Port
-// reservations). The report's exact shape is not yet pinned by a real-host
+// --format json` reports are authoritative — the registry defers to the
+// backend's live state. The report's exact shape is not yet pinned by a real-host
 // probe — the SandboxConfig keeps the raw JSON for that reason — so the
 // parser here accepts every plausible shape tolerantly and fails closed on
 // content it cannot read: an unreadable port report is never treated as an

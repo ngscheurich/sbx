@@ -38,7 +38,7 @@ type Config struct {
 	Network   NetworkConfig           `toml:"network"`
 	// ImageCheck is the optional path of the project-owned guest script
 	// that gates image use: it runs in an isolated sandbox from the image
-	// alone before any sandbox uses the image (ADR-0004).
+	// alone, before any sandbox uses the image.
 	ImageCheck string `toml:"image_check"`
 	// Build is the optional [build] recipe; nil means the image is prebuilt
 	// and may be pulled, while a declared recipe means `sbx build` builds

@@ -1,7 +1,7 @@
 // `sbx list`: the one backend-global command. Every other sbx command
 // starts from the worktree — discover the root, load that checkout's
 // sbx.toml — but a machine-wide view of the sandboxes sbx holds cannot,
-// so list talks to the backend alone (ADR-0008).
+// so list talks to the backend alone and never reads project configuration.
 package cli
 
 import (

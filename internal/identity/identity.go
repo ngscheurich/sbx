@@ -1,5 +1,7 @@
-// Package identity derives names that depend only on Git locations, never on
-// editable configuration (ADR-0005) and never on project configuration values.
+// Package identity derives names that depend only on Git locations: never
+// on editable configuration and never on project configuration values, so a
+// worktree can stop, log, or remove its sandbox no matter what its
+// sbx.toml says.
 package identity
 
 import (
@@ -10,7 +12,8 @@ import (
 )
 
 // maxComponent is the maximum length of a sanitized name component in a
-// Sandbox identity, per the spec: "cut to 32 characters".
+// 32 characters keeps every component of a Sandbox identity readable in
+// table columns and backend listings.
 const maxComponent = 32
 
 // ProjectBasename derives the project name from the repository's common Git
@@ -52,7 +55,8 @@ func HashPath(p string) string {
 
 // VolumeNamespace derives the Project volume namespace from the common Git
 // directory. Sibling worktrees of one project share it; unrelated clones do
-// not (ADR-0003).
+// not, so one project's worktrees share volumes and two projects never see
+// each other's.
 func VolumeNamespace(commonDir string) string {
 	return HashPath(commonDir)
 }

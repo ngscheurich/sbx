@@ -3,7 +3,7 @@
 // and the sandbox's created_at — msb's record of which sandbox incarnation
 // ran — to a hash of the definition, so a marker left by a removed and
 // recreated sandbox is never reused and a changed definition is reported
-// without touching Creation drift (ADR-0002). Markers are host state, not
+// without touching Creation drift. Markers are host state, not
 // sandbox labels: msb requires a restart to change a running sandbox's
 // label, and Bootstrap recording must not restart anything.
 package state

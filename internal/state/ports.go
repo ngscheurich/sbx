@@ -3,7 +3,7 @@
 // state directory, is updated atomically under a cross-process lock, and is
 // keyed by Sandbox identity and port name — so a sandbox's reservations
 // survive stop, rm, and host restarts, and sibling worktrees never race for
-// the same candidate (see the spec's Port reservations).
+// the same candidate.
 //
 // The registry is storage only: the choice of ports is policy, kept in the
 // ports package on top of these primitives.

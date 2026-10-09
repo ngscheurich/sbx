@@ -81,8 +81,8 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, out *out
 
 	// A declared image check gates the image: it runs in an isolated check
 	// sandbox unless a matching pass is recorded, and the image is confirmed
-	// unchanged before the run uses it (ADR-0004). The gate is a no-op when
-	// no image check is declared.
+	// unchanged before the run uses it. The gate is a no-op when no image
+	// check is declared.
 	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
 	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, out); err != nil {
 		return fatal(err)

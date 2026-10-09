@@ -463,7 +463,7 @@ func inspectProjectVolumes(ctx context.Context, box msb.CLI, declared []volumes.
 
 // checkProjectVolumes refuses a sandbox mutation when a declared Project
 // volume clashes with the volume the backend already holds under its
-// derived name (ADR-0003): every declared volume is compared before
+// derived name: every declared volume is compared before
 // anything is created, pulled, or started. A missing or malformed
 // inspection fails the command rather than passing as an empty listing or
 // a compatible definition. sbx never resizes, overwrites, or deletes an

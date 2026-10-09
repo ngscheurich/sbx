@@ -1,8 +1,8 @@
 // Image checks: a project's declared image_check script gates image use.
 // The script runs in an isolated check sandbox created from the image
 // alone — no Workspace, volumes, secrets, or project network policy — and
-// the check sandbox is removed on every exit path, cancellation included
-// (ADR-0004). Successes are recorded in host state keyed by the image's
+// the check sandbox is removed on every exit path, cancellation included.
+// Successes are recorded in host state keyed by the image's
 // manifest digest and the script's content hash; a changed script needs a
 // new pass but is not Creation drift. A failed check never touches an
 // existing sandbox or its data.

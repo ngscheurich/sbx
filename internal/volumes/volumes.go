@@ -1,6 +1,6 @@
 // Package volumes decides whether the Project volumes a worktree declares
 // are compatible with the volumes the backend already holds — before any
-// sandbox mutation, and in the read-only Plan (ADR-0003). Sibling
+// sandbox mutation, and in the read-only Plan. Sibling
 // worktrees derive the same backend names from the common Git directory,
 // so two branches can declare the same Project volume differently; sbx
 // rejects such a conflict instead of splitting or resizing storage. sbx

@@ -1,8 +1,8 @@
 // Package translate turns validated project configuration and Git discovery
 // into backend-facing settings: msb create-style options, resolved bind
 // paths, and the generated secret-name map. It is a pure seam with no
-// backend access, shared by the disposable run and the read-only Plan
-// (ADR-0001): configuration describes behavior, never msb syntax.
+// backend access, shared by the disposable run and the read-only Plan:
+// configuration describes behavior, never msb syntax.
 package translate
 
 import (
@@ -38,7 +38,7 @@ type Translation struct {
 	SecretNames []string
 	// ProjectVolumes are the declared Project volumes in name order, with
 	// their derived backend names, for the pre-creation compatibility
-	// check against the backend's existing volumes (ADR-0003).
+	// check against the backend's existing volumes.
 	ProjectVolumes []volumes.Declared
 	// Ports are the declared named guest ports in name order. The host
 	// loopback ports are reserved at creation time, never here — choosing

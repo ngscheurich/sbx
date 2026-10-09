@@ -41,12 +41,6 @@ read_only = true
 
 [[mounts]]
 type = "bind"
-source = "~/.pi/agent/extensions"
-target = "/root/.pi/agent/extensions"
-read_only = true
-
-[[mounts]]
-type = "bind"
 source = "~/.pi/agent/trust.json"
 target = "/root/.pi/agent/trust.json"
 read_only = true
@@ -55,4 +49,5 @@ read_only = true
 policy = "public"
 
 [aliases]
+sh = "exec -- sh"
 pi = "exec -- pi"

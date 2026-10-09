@@ -104,7 +104,7 @@ func runBuild(ctx context.Context, args []string, out *output) int {
 
 	// A declared image check gates the freshly imported image: it runs in
 	// an isolated sandbox from the image alone, and a failing check fails
-	// the build — although the imported image stays cached (ADR-0004).
+	// the build — although the imported image stays cached.
 	id := identity.Derive(info.CommonDir, info.WorktreeRoot)
 	if err := ensureImageChecked(ctx, box, cfg, info.WorktreeRoot, id.Sandbox, out); err != nil {
 		return fatal(err)
