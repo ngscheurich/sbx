@@ -76,8 +76,12 @@ A difference between a persistent sandbox's creation-time settings and the curre
 **Plan**:
 A side-effect-free view of sbx's intended actions and backend translation, including tentative ports and redacted secrets.
 
+**JSON output**:
+The third stdout mode, requested per command with `--json`, that replaces the human surface with a stable, field-based rendering: every meaning the prose states becomes a field, empty results are empty arrays, and errors never appear on stdout. A public contract scripts may parse.
+_Avoid_: Machine output, structured output, raw output
+
 **Plain output**:
-The ANSI-free bytes sbx writes — what a pipe receives and what a terminal shows under `NO_COLOR`; byte-identical to sbx's output before styling existed.
+The ANSI-free human bytes sbx writes by default — what a pipe receives unless JSON output was requested, and what a terminal shows under `NO_COLOR`; byte-identical to sbx's output before styling existed.
 _Avoid_: Raw output, unstyled output
 
 **Styled output**:
