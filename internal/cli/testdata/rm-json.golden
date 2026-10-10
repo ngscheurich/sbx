@@ -1,0 +1,15 @@
+{
+  "sandbox": "<sandbox-id>",
+  "removed": true,
+  "sandbox_volumes": [
+    {
+      "target": "/data",
+      "kind": "disk",
+      "size": "2G"
+    },
+    {
+      "target": "/logs",
+      "kind": "dir"
+    }
+  ]
+}

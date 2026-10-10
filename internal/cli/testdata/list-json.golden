@@ -1,0 +1,14 @@
+[
+  {
+    "name": "proj-a",
+    "image": "debian:12",
+    "status": "Stopped",
+    "created_at": "2024-01-01T00:00:00Z"
+  },
+  {
+    "name": "proj-b",
+    "image": "alpine:3.20",
+    "status": "Running",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
+]

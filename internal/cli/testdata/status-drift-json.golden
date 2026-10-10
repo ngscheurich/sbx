@@ -1,0 +1,18 @@
+{
+  "sandbox": "<sandbox-id>",
+  "exists": true,
+  "owned": true,
+  "status": "Running",
+  "created_at": "<created-at>",
+  "created_from_image_contents": "sha256:fake",
+  "drift": {
+    "entries": [
+      {
+        "setting": "cpus",
+        "was": "2",
+        "now": "4"
+      }
+    ]
+  },
+  "bootstrap": "complete"
+}

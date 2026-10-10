@@ -1,6 +1,6 @@
 # JSON seam, `list --json`, `version --json`
 
-Status: open
+Status: resolved
 Blocked by: none
 
 The output struct gains the JSON lever and a writer: an `encoding/json`
@@ -16,3 +16,7 @@ backend's raw RFC3339 `created_at` (an empty listing is `[]`), and
 human line cannot drift from the object.
 
 Golden-test both surfaces per the spec's acceptance.
+
+## Comments
+
+Implemented the shared JSON writer, per-command parsing, and list/version projections. Goldens pin both surfaces and the empty listing; tests cover rejecting commands, leading-only `--plain` combinations, styling independence, and JSON write failures. Version prose and JSON now share one report.

@@ -1,6 +1,6 @@
 # `status --json`
 
-Status: open
+Status: resolved
 Blocked by: 01
 
 The full meaning-preserving projection of the status report:
@@ -20,3 +20,7 @@ drift?, ports?, bootstrap?, bootstrap_declared?}`.
 
 Golden-test against the seeded fake backend, as the plain status golden
 does.
+
+## Comments
+
+Implemented the status projection and shared port collection/rendering. Goldens cover absent, unowned, owned, clean, drifted, changed-Bootstrap, and untranslatable configurations, including published ports and registry discrepancies. JSON failures leave stdout empty.

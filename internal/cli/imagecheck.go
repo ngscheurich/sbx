@@ -95,7 +95,7 @@ func runCheckSandbox(ctx context.Context, box msb.CLI, cfg config.Config, worktr
 	// secrets, or project network policy.
 	argv := []string{"/bin/sh", "-c",
 		"cat > " + imageCheckGuestPath + " && chmod +x " + imageCheckGuestPath + " && exec " + imageCheckGuestPath}
-	code, err := box.Exec(ctx, name, "", argv, strings.NewReader(script), out.rawOut, out.rawErr)
+	code, err := box.Exec(ctx, name, "", argv, strings.NewReader(script), out.subprocessStdout(), out.rawErr)
 	if err != nil && code < 0 {
 		return fmt.Errorf("the image check was interrupted before it finished: %w", err)
 	}

@@ -1,6 +1,6 @@
 # `plan --json`
 
-Status: open
+Status: resolved
 Blocked by: 03
 
 The plan package gains a `JSON()` projection in its own package (cli
@@ -15,3 +15,7 @@ each with its error field where the prose warns.
 
 A translation failure collapses the object to identity plus the reason,
 exactly as the prose does. Golden-test against the fixture repo.
+
+## Comments
+
+Implemented the typed `Plan.JSON()` projection, sharing volume compatibility classification with prose. Package goldens pin translation, live findings, warnings, conflicts, and translation failure; CLI goldens pin the composed fixture-repository reports with and without a live sandbox. Secret values are never read or included.

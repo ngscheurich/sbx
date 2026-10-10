@@ -373,28 +373,57 @@ func (p Plan) renderLive(b *strings.Builder, st ui.Styles, plain bool) {
 	}
 }
 
-// volumeStatus renders one declared Project volume's compatibility outcome
-// once the check has run: reuse, creation, or a conflict.
-func (p Plan) volumeStatus(pv volumes.Declared, st ui.Styles) string {
+type volumeState string
+
+const (
+	volumeUnchecked volumeState = "unchecked"
+	volumeUnknown   volumeState = "unknown"
+	volumeConflict  volumeState = "conflict"
+	volumeReuse     volumeState = "reuse"
+	volumeCreate    volumeState = "create"
+)
+
+type volumeAssessment struct {
+	state    volumeState
+	conflict *volumes.Conflict
+}
+
+func (p Plan) assessVolume(v volumes.Declared) volumeAssessment {
+	if p.VolumeCheckErr != nil {
+		return volumeAssessment{state: volumeUnknown}
+	}
 	if p.VolumeReport == nil {
-		return ""
+		return volumeAssessment{state: volumeUnchecked}
 	}
 	for _, c := range p.VolumeReport.Conflicts {
-		if c.Declared.Logical == pv.Logical {
-			return st.Warning.Render(" — CONFLICT (see below)")
+		if c.Declared.Logical == v.Logical {
+			return volumeAssessment{state: volumeConflict, conflict: &c}
 		}
 	}
 	for _, name := range p.VolumeReport.Reused {
-		if name == pv.Logical {
-			return st.Positive.Render(" (reuses the existing volume)")
+		if name == v.Logical {
+			return volumeAssessment{state: volumeReuse}
 		}
 	}
 	for _, name := range p.VolumeReport.Fresh {
-		if name == pv.Logical {
-			return " (will be created)"
+		if name == v.Logical {
+			return volumeAssessment{state: volumeCreate}
 		}
 	}
-	return ""
+	return volumeAssessment{state: volumeUnchecked}
+}
+
+func (p Plan) volumeStatus(pv volumes.Declared, st ui.Styles) string {
+	switch p.assessVolume(pv).state {
+	case volumeConflict:
+		return st.Warning.Render(" — CONFLICT (see below)")
+	case volumeReuse:
+		return st.Positive.Render(" (reuses the existing volume)")
+	case volumeCreate:
+		return " (will be created)"
+	default:
+		return ""
+	}
 }
 
 func describeNetwork(n config.NetworkConfig) string {

@@ -1,0 +1,24 @@
+{
+  "sandbox": "<sandbox-id>",
+  "exists": true,
+  "owned": true,
+  "status": "Running",
+  "created_at": "2024-01-01T00:00:00Z",
+  "created_from_image_contents": "sha256:seeded",
+  "drift": {
+    "notes": [
+      "no creation-time snapshot exists for this sandbox; an owned sandbox without a snapshot counts as drifted"
+    ]
+  },
+  "ports": {
+    "published": [
+      {
+        "host": 8080,
+        "guest": 80
+      }
+    ],
+    "discrepancies": [
+      "the sandbox publishes 8080 for guest 80, but the registry holds no reservation for it"
+    ]
+  }
+}

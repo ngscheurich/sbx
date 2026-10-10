@@ -89,23 +89,17 @@ func reconcileCreatedPorts(ctx context.Context, box msb.CLI, p *persistent) erro
 }
 
 // withPorts appends the creation report's endpoints to an action message.
-func withPorts(msg string, assigns []ports.Assignment, st ui.Styles) string {
-	if len(assigns) == 0 {
+func withPorts(msg string, endpoints []portEndpoint, st ui.Styles) string {
+	if len(endpoints) == 0 {
 		return msg
 	}
-	return msg + "\n" + st.Heading.Render("published ports:") + "\n" + ports.FormatAssignments(assigns)
+	return msg + "\n" + st.Heading.Render("published ports:") + "\n" + formatEndpoints(endpoints)
 }
 
-// formatEndpoints renders the backend's reported ports with their declared
-// names, for reuse reports where inspection is authoritative.
-func formatEndpoints(declared []translate.DeclaredPort, actual []msb.PublishedPort) string {
-	nameByGuest := map[int]string{}
-	for _, d := range declared {
-		nameByGuest[d.Guest] = d.Name
-	}
+func formatEndpoints(endpoints []portEndpoint) string {
 	var b strings.Builder
-	for _, p := range actual {
-		fmt.Fprintf(&b, "%s: 127.0.0.1:%d -> guest %d\n", nameByGuest[p.GuestPort], p.HostPort, p.GuestPort)
+	for _, p := range endpoints {
+		fmt.Fprintf(&b, "%s: 127.0.0.1:%d -> guest %d\n", p.Name, p.Host, p.Guest)
 	}
 	return b.String()
 }
@@ -126,35 +120,47 @@ func reconcilePorts(p *persistent, s msb.Sandbox) error {
 	return ports.Reconcile(p.id.Sandbox, declaredPorts(p.tr), actual)
 }
 
-// reportPorts writes the read-only port report status shows: the published
-// mappings the backend reports, and any registry discrepancy — reported,
-// never corrected or reserved. It needs neither a translatable
-// configuration nor a reservation, so it stays usable when the sandbox has
-// drifted or sbx.toml no longer declares the ports.
-func reportPorts(sandbox string, s msb.Sandbox, w io.Writer, st ui.Styles) {
+func collectPorts(sandbox string, s msb.Sandbox) *portFindings {
+	report := &portFindings{}
 	actual, err := s.PortsOf()
 	if err != nil {
-		fmt.Fprintf(w, "%s\n", st.Warning.Render(fmt.Sprintf("ports: the sandbox’s published ports are unreadable (%v)", err)))
-		return
+		report.PublishedErr = err.Error()
+		return report
 	}
-	switch {
-	case len(actual) == 0:
-		// No section at all when nothing is published: most sandboxes
-		// declare no ports.
-	default:
-		fmt.Fprintf(w, "%s\n", st.Heading.Render("ports:"))
-		for _, p := range actual {
-			fmt.Fprintf(w, "  - 127.0.0.1:%d -> guest %d\n", p.HostPort, p.GuestPort)
-		}
-	}
+	report.Published = namedEndpoints(nil, actual)
 	lines, err := ports.Discrepancies(sandbox, actual)
 	if err != nil {
-		fmt.Fprintf(w, "%s\n", st.Warning.Render(fmt.Sprintf("port registry: unreadable (%v)", err)))
+		report.RegistryErr = err.Error()
+	} else {
+		report.Discrepancies = lines
+	}
+	if len(report.Published) == 0 && len(lines) == 0 && err == nil {
+		return nil
+	}
+	return report
+}
+
+func renderPorts(report *portFindings, w io.Writer, st ui.Styles) {
+	if report == nil {
 		return
 	}
-	if len(lines) > 0 {
+	if report.PublishedErr != "" {
+		fmt.Fprintf(w, "%s\n", st.Warning.Render(fmt.Sprintf("ports: the sandbox’s published ports are unreadable (%s)", report.PublishedErr)))
+		return
+	}
+	if len(report.Published) > 0 {
+		fmt.Fprintf(w, "%s\n", st.Heading.Render("ports:"))
+		for _, p := range report.Published {
+			fmt.Fprintf(w, "  - 127.0.0.1:%d -> guest %d\n", p.Host, p.Guest)
+		}
+	}
+	if report.RegistryErr != "" {
+		fmt.Fprintf(w, "%s\n", st.Warning.Render(fmt.Sprintf("port registry: unreadable (%s)", report.RegistryErr)))
+		return
+	}
+	if len(report.Discrepancies) > 0 {
 		fmt.Fprintf(w, "%s\n", st.Heading.Render("port registry discrepancies (a mutating command such as `sbx up` corrects these; status does not):"))
-		for _, line := range lines {
+		for _, line := range report.Discrepancies {
 			fmt.Fprintf(w, "  - %s\n", line)
 		}
 	}
@@ -165,10 +171,11 @@ func reportPorts(sandbox string, s msb.Sandbox, w io.Writer, st ui.Styles) {
 // stopped ones — and fail safely when the backend cannot be inspected,
 // changing nothing.
 func runPortPrune(ctx context.Context, args []string, out *output) int {
-	// args[0] is "port" and args[1] is "prune"; anything further is usage.
-	if len(args) > 2 {
-		return out.usagef("port prune takes no arguments or flags, got %q", strings.Join(args[2:], " "))
+	flags, err := parsePersistentFlags("port prune", args[1:], []string{"--json"})
+	if err != nil {
+		return out.usagef("%v", err)
 	}
+	out.json = flags["--json"]
 	box := msb.CLI{}
 	if _, err := box.LocalContext(ctx); err != nil {
 		return out.fail(err)
@@ -186,6 +193,15 @@ func runPortPrune(ctx context.Context, args []string, out *output) int {
 	removed, err := ports.Prune(func(sandbox string) bool { return exists[sandbox] })
 	if err != nil {
 		return out.fail(err)
+	}
+	if out.json {
+		pruned := make([]prunedReservation, 0, len(removed))
+		for _, r := range removed {
+			pruned = append(pruned, prunedReservation{Sandbox: r.Sandbox, Name: r.Name, Host: r.Port, Guest: r.Guest})
+		}
+		return out.writeJSON(struct {
+			Pruned []prunedReservation `json:"pruned"`
+		}{Pruned: pruned})
 	}
 	if len(removed) == 0 {
 		fmt.Fprintf(out.stdout, "port registry: nothing to prune; every reservation belongs to a sandbox the backend still knows (stopped sandboxes keep theirs)\n")

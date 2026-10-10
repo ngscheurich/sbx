@@ -1,0 +1,15 @@
+{
+  "sandbox": "<sandbox-id>",
+  "created": true,
+  "started": false,
+  "image_contents": "sha256:fake",
+  "bootstrap": "not_declared",
+  "bootstrap_ran": false,
+  "published_ports": [
+    {
+      "name": "web",
+      "host": 4001,
+      "guest": 80
+    }
+  ]
+}

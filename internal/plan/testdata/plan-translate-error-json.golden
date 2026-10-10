@@ -1,0 +1,8 @@
+{
+  "project": "app",
+  "worktree_root": "/src/app/wt1",
+  "common_git_dir": "/src/app/.git",
+  "sandbox": "app-wt1-cd4c9147",
+  "volume_namespace": "53ee4efe",
+  "translate_error": "bind source missing"
+}

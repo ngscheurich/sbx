@@ -74,7 +74,7 @@ func styledScenarios(t *testing.T) (planOut, statusOut, errOut []byte) {
 var severityWords = map[string][][]byte{
 	"plan report":      {[]byte("translation failed, so the sandbox cannot be planned")},
 	"status report":    {[]byte("Running")},
-	"usage error line": {[]byte("sbx:"), []byte("plan takes no arguments")},
+	"usage error line": {[]byte("sbx:"), []byte("plan takes only --json")},
 }
 
 // TestStyledOutputColorsTheWordsItKeeps forces color through the seam with

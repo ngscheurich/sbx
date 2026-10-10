@@ -1,0 +1,50 @@
+{
+  "project": "<project>",
+  "worktree_root": "<worktree_root>",
+  "common_git_dir": "<common_git_dir>",
+  "sandbox": "<sandbox-id>",
+  "volume_namespace": "<volume_namespace>",
+  "config": {
+    "image": "alpine:3.20",
+    "cpus": 2,
+    "memory": "2G",
+    "shell": "/bin/sh"
+  },
+  "translation": {
+    "workspace": "/workspace",
+    "mounts": [],
+    "tmpfs": [],
+    "project_volumes": [],
+    "sandbox_volumes": [],
+    "environment": [],
+    "network": {
+      "policy": "public",
+      "allow": [],
+      "dns_nameservers": [],
+      "tls_intercept": false,
+      "deny_by_default": false
+    },
+    "ports": [],
+    "bootstrap_declared": false,
+    "secrets": []
+  },
+  "create_argv": [
+    "msb",
+    "create",
+    "--name",
+    "<sandbox-id>",
+    "alpine:3.20",
+    "--cpus",
+    "2",
+    "--memory",
+    "2G",
+    "--mount-dir",
+    "<worktree_root>:/workspace",
+    "--label",
+    "sbx.managed=1",
+    "--label",
+    "sbx.mode=persistent",
+    "--label",
+    "sbx.worktree=<worktree_root>"
+  ]
+}

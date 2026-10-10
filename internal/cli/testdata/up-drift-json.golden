@@ -1,0 +1,18 @@
+{
+  "sandbox": "<sandbox-id>",
+  "created": false,
+  "started": false,
+  "image_contents": "sha256:fake",
+  "bootstrap": "complete",
+  "bootstrap_ran": false,
+  "published_ports": [],
+  "drift": {
+    "entries": [
+      {
+        "setting": "cpus",
+        "was": "2",
+        "now": "4"
+      }
+    ]
+  }
+}

@@ -27,11 +27,12 @@ import (
 // on success, failure, and cancellation alike unless --keep-archive keeps
 // it for debugging.
 func runBuild(ctx context.Context, args []string, out *output) int {
-	keep, err := parsePersistentFlags("build", args, []string{"--keep-archive"})
+	keep, err := parsePersistentFlags("build", args, []string{"--keep-archive", "--json"})
 	if err != nil {
 		return out.usagef("%v", err)
 	}
 
+	out.json = keep["--json"]
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -92,7 +93,7 @@ func runBuild(ctx context.Context, args []string, out *output) int {
 		Target:     cfg.Build.Target,
 		Platform:   cfg.Build.Platform,
 		Tag:        cfg.Image,
-	}, out.rawOut, out.rawErr); err != nil {
+	}, out.subprocessStdout(), out.rawErr); err != nil {
 		return fatal(err)
 	}
 	if err := dk.Save(ctx, cfg.Image, archivePath); err != nil {
@@ -110,6 +111,17 @@ func runBuild(ctx context.Context, args []string, out *output) int {
 		return fatal(err)
 	}
 
+	if out.json {
+		result := struct {
+			Image    string `json:"image"`
+			Platform string `json:"platform"`
+			Archive  string `json:"archive,omitempty"`
+		}{Image: cfg.Image, Platform: cfg.Build.Platform}
+		if keepArchive {
+			result.Archive = archivePath
+		}
+		return out.writeJSON(result)
+	}
 	fmt.Fprintf(out.stdout, "built %s for %s and imported it into msb’s image store\n", cfg.Image, cfg.Build.Platform)
 	if keepArchive {
 		fmt.Fprintf(out.stdout, "image archive kept for debugging: %s\n", archivePath)

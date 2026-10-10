@@ -97,8 +97,11 @@ func TestPlanRejectsUnexpectedArguments(t *testing.T) {
 }
 
 func TestUnknownCommandFails(t *testing.T) {
+	worktree, _ := harness.FixtureRepo(t, validTOML)
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run(context.Background(), []string{"deploy"}, nil, &stdout, &stderr); code == 0 {
+	if code := harness.Chdir(t, worktree, func() int {
+		return cli.Run(context.Background(), []string{"deploy"}, nil, &stdout, &stderr)
+	}); code == 0 {
 		t.Fatal("unknown command succeeded")
 	}
 	if !strings.Contains(stderr.String(), "deploy") {

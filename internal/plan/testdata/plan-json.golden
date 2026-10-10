@@ -1,0 +1,91 @@
+{
+  "project": "app",
+  "worktree_root": "/src/app/wt1",
+  "common_git_dir": "/src/app/.git",
+  "sandbox": "app-wt1-cd4c9147",
+  "volume_namespace": "53ee4efe",
+  "config": {
+    "image": "alpine:3.20",
+    "cpus": 2,
+    "memory": "2G",
+    "shell": "/bin/sh"
+  },
+  "translation": {
+    "workspace": "/workspace",
+    "mounts": [],
+    "tmpfs": [
+      {
+        "target": "/tmp",
+        "size": "512M",
+        "noexec": false
+      }
+    ],
+    "project_volumes": [
+      {
+        "name": "cache",
+        "backend": "53ee4efe-cache",
+        "target": "/var/cache",
+        "kind": "dir",
+        "status": "unchecked"
+      }
+    ],
+    "sandbox_volumes": [],
+    "environment": [
+      "MODE=test"
+    ],
+    "network": {
+      "policy": "allowlist",
+      "allow": [
+        "example.com"
+      ],
+      "dns_nameservers": [
+        "1.1.1.1"
+      ],
+      "tls_intercept": true,
+      "deny_by_default": true
+    },
+    "ports": [],
+    "bootstrap_declared": false,
+    "secrets": [
+      {
+        "name": "TOKEN",
+        "from_env": "SBX_PLAN_TOKEN",
+        "destinations": [
+          "example.com"
+        ]
+      }
+    ]
+  },
+  "create_argv": [
+    "msb",
+    "create",
+    "--name",
+    "app-wt1-cd4c9147",
+    "alpine:3.20",
+    "--cpus",
+    "2",
+    "--memory",
+    "2G",
+    "--mount-dir",
+    "/src/app/wt1:/workspace",
+    "--mount-named",
+    "53ee4efe-cache:/var/cache",
+    "--env",
+    "MODE=test",
+    "--label",
+    "sbx.managed=1",
+    "--label",
+    "sbx.mode=persistent",
+    "--label",
+    "sbx.worktree=/src/app/wt1",
+    "--net-rule",
+    "allow@example.com",
+    "--tls-intercept",
+    "--dns-nameserver",
+    "1.1.1.1",
+    "--secret-conf",
+    "\u003csecret map generated at creation\u003e",
+    "--fs-conf",
+    "\u003cfilesystem configuration generated at creation\u003e"
+  ]
+}

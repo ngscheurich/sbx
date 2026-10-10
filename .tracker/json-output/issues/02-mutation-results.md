@@ -1,6 +1,6 @@
 # JSON for the mutations: up, stop, rm, build, port prune
 
-Status: open
+Status: resolved
 Blocked by: 01
 
 Minimal result objects — identity plus outcome:
@@ -20,3 +20,7 @@ Minimal result objects — identity plus outcome:
 
 `rm --json` without `--yes` keeps today's refusal unchanged. Golden-test
 what the fakes can reach.
+
+## Comments
+
+Implemented JSON results for every mutation, with golden coverage for creation/reuse/start, Bootstrap retries, accepted drift, published ports, stopped/no-op outcomes, known/empty/unknown Sandbox volumes, retained archives, and pruning. `bootstrap_ran` preserves the retry action and `drift` preserves accepted drift findings. Subprocess progress goes to stderr in JSON mode, and removal still requires confirmation.

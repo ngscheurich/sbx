@@ -1,0 +1,134 @@
+{
+  "project": "app",
+  "worktree_root": "/src/app/wt1",
+  "common_git_dir": "/src/app/.git",
+  "sandbox": "app-wt1-cd4c9147",
+  "volume_namespace": "53ee4efe",
+  "config": {
+    "image": "alpine:3.20",
+    "cpus": 2,
+    "memory": "2G",
+    "shell": "/bin/sh"
+  },
+  "translation": {
+    "workspace": "/workspace",
+    "mounts": [
+      {
+        "source": "/src/shared",
+        "target": "/shared",
+        "read_only": true,
+        "is_file": false
+      }
+    ],
+    "tmpfs": [
+      {
+        "target": "/tmp",
+        "size": "512M",
+        "noexec": true
+      }
+    ],
+    "project_volumes": [
+      {
+        "name": "cache",
+        "backend": "53ee4efe-cache",
+        "target": "/var/cache",
+        "kind": "dir",
+        "status": "conflict",
+        "conflict": {
+          "existing": {
+            "name": "53ee4efe-cache",
+            "kind": "disk",
+            "capacity_bytes": 1073741824,
+            "quota_mib": null
+          },
+          "mismatches": [
+            "kind: declared \"dir\", existing \"disk\""
+          ]
+        }
+      }
+    ],
+    "sandbox_volumes": [
+      {
+        "target": "/data",
+        "kind": "disk",
+        "size": "2G"
+      }
+    ],
+    "environment": [
+      "MODE=test"
+    ],
+    "network": {
+      "policy": "allowlist",
+      "allow": [
+        "example.com"
+      ],
+      "dns_nameservers": [
+        "1.1.1.1"
+      ],
+      "tls_intercept": true,
+      "deny_by_default": true
+    },
+    "ports": [
+      {
+        "name": "web",
+        "guest": 80,
+        "state": "chosen_at_creation",
+        "host_range": {
+          "first": 4001,
+          "last": 4099
+        }
+      }
+    ],
+    "bootstrap_declared": true,
+    "image_check": {
+      "script": "image-check.sh",
+      "state": "known",
+      "image_contents": "sha256:current"
+    },
+    "secrets": [
+      {
+        "name": "TOKEN",
+        "from_env": "SBX_PLAN_TOKEN",
+        "destinations": [
+          "example.com"
+        ]
+      }
+    ]
+  },
+  "create_argv": [
+    "msb",
+    "create",
+    "--name",
+    "app-wt1-cd4c9147",
+    "alpine:3.20",
+    "--cpus",
+    "2",
+    "--memory",
+    "2G",
+    "--mount-dir",
+    "/src/app/wt1:/workspace",
+    "--mount-dir",
+    "/src/shared:/shared:ro",
+    "--mount-named",
+    "53ee4efe-cache:/var/cache",
+    "--mount-owned",
+    "/data:kind=disk,size=2G",
+    "--env",
+    "MODE=test",
+    "--label",
+    "sbx.managed=1",
+    "--label",
+    "sbx.mode=persistent",
+    "--label",
+    "sbx.worktree=/src/app/wt1",
+    "--net-rule",
+    "allow@example.com",
+    "--tls-intercept",
+    "--dns-nameserver",
+    "1.1.1.1",
+    "--secret-conf",
+    "\u003csecret map generated at creation\u003e",
+    "--fs-conf",
+    "\u003cfilesystem configuration generated at creation\u003e"
+  ]
+}

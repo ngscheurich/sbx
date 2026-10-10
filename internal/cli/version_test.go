@@ -61,8 +61,8 @@ func TestVersionString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := versionString(tt.bi); got != tt.want {
-				t.Errorf("versionString() = %q, want %q", got, tt.want)
+			if got := versionData(tt.bi).String(); got != tt.want {
+				t.Errorf("version report = %q, want %q", got, tt.want)
 			}
 		})
 	}

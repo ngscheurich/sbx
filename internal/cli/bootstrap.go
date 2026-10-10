@@ -89,7 +89,7 @@ var saveBootstrapMarker = state.SaveBootstrapMarker
 func runBootstrap(ctx context.Context, box msb.CLI, p *persistent, createdAt string, out *output) error {
 	fmt.Fprintf(out.stderr, "sbx: running bootstrap in %s (%s -c)\n", p.id.Sandbox, p.cfg.Shell)
 	code, err := box.Exec(ctx, p.id.Sandbox, p.tr.Workspace,
-		[]string{p.cfg.Shell, "-c", p.cfg.Bootstrap.Run}, nil, out.rawOut, out.rawErr)
+		[]string{p.cfg.Shell, "-c", p.cfg.Bootstrap.Run}, nil, out.subprocessStdout(), out.rawErr)
 	if err != nil && code < 0 {
 		return fmt.Errorf("bootstrap was interrupted before it finished: %w\n\n%s", err, incompleteGuidance(p.id.Sandbox))
 	}

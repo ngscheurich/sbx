@@ -1,0 +1,9 @@
+{
+  "sandbox": "<sandbox-id>",
+  "created": true,
+  "started": false,
+  "image_contents": "sha256:fake",
+  "bootstrap": "complete",
+  "bootstrap_ran": true,
+  "published_ports": []
+}

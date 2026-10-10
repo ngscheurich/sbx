@@ -1,1 +1,1 @@
-sbx: plan takes no arguments or flags yet, got "--verbose"
+sbx: plan takes only --json, got "--verbose"

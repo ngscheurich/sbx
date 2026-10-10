@@ -1,0 +1,11 @@
+{
+  "sandbox": "<sandbox-id>",
+  "exists": true,
+  "owned": true,
+  "status": "Running",
+  "created_at": "<created-at>",
+  "created_from_image_contents": "sha256:fake",
+  "drift": {
+    "unknown": "the current configuration does not translate: mounts[0]: bind source \"./missing\" does not exist (resolved to <worktree>/missing)"
+  }
+}

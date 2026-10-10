@@ -1,0 +1,10 @@
+{
+  "sandbox": "<sandbox-id>",
+  "created": false,
+  "started": false,
+  "image_contents": "sha256:fake",
+  "bootstrap": "complete",
+  "bootstrap_ran": false,
+  "published_ports": [],
+  "drift": {}
+}

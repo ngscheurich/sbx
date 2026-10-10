@@ -3,10 +3,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ngscheurich/sbx/internal/config"
@@ -43,6 +45,7 @@ type output struct {
 	// non-color decoration (table borders) on top of what the forced
 	// NoTTY profile already strips.
 	plain bool
+	json  bool
 	// discovered caches the invocation's one configuration load, so the
 	// alias-shadow check and the command's own runner share a single git
 	// spawn and sbx.toml parse.
@@ -79,6 +82,22 @@ func (o *output) fail(err error) int {
 func (o *output) usagef(format string, args ...any) int {
 	fmt.Fprintf(o.stderr, "%s %s\n", o.styles.Error.Render("sbx:"), fmt.Sprintf(format, args...))
 	return exitUsage
+}
+
+func (o *output) subprocessStdout() io.Writer {
+	if o.json {
+		return o.rawErr
+	}
+	return o.rawOut
+}
+
+func (o *output) writeJSON(value any) int {
+	encoder := json.NewEncoder(o.stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return o.fail(fmt.Errorf("write JSON output: %w", err))
+	}
+	return exitOK
 }
 
 // helpFlags are the top-level flags help lists, in help order.
@@ -202,13 +221,20 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 		warnIfShadowed(ctx, cmd, out)
 	}
 	switch cmd {
+	case "--json":
+		return out.usagef("--json is a per-command flag; use “sbx <command> --json”")
 	case "-h", "--help", "help":
+		if slices.Contains(args[1:], "--json") {
+			return out.usagef("help does not support --json")
+		}
 		fmt.Fprint(out.stdout, renderHelp(out.styles))
 		return exitOK
 	case "plan":
-		if len(args) > 1 {
-			return out.usagef("plan takes no arguments or flags yet, got %q", strings.Join(args[1:], " "))
+		flags, err := parsePersistentFlags("plan", args, []string{"--json"})
+		if err != nil {
+			return out.usagef("%v", err)
 		}
+		out.json = flags["--json"]
 		return runPlan(ctx, out)
 	case "build":
 		return runBuild(ctx, args, out)
@@ -221,9 +247,11 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 	case "status":
 		return runStatus(ctx, args, out)
 	case "list":
-		if len(args) > 1 {
-			return out.usagef("list takes no arguments or flags yet, got %q", strings.Join(args[1:], " "))
+		flags, err := parsePersistentFlags("list", args, []string{"--json"})
+		if err != nil {
+			return out.usagef("%v", err)
 		}
+		out.json = flags["--json"]
 		return runList(ctx, out)
 	case "logs":
 		return runLogs(ctx, args, out)
@@ -241,6 +269,13 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 		}
 		return runPortPrune(ctx, args, out)
 	case "-V", "--version", "version":
+		if slices.Contains(args[1:], "--json") {
+			if _, err := parsePersistentFlags("version", args, []string{"--json"}); err != nil {
+				return out.usagef("%v", err)
+			}
+			out.json = true
+			return out.writeJSON(currentVersion())
+		}
 		fmt.Fprintln(out.stdout, currentVersion())
 		return exitOK
 	default:
@@ -312,6 +347,9 @@ func runPlan(ctx context.Context, out *output) int {
 	checkPlanImageCheck(ctx, msb.CLI{}, info, cfg, &p)
 	checkPlanPorts(&p)
 	checkPlanLive(ctx, msb.CLI{}, info, cfg, &p)
+	if out.json {
+		return out.writeJSON(p.JSON())
+	}
 	fmt.Fprint(out.stdout, p.Render(out.styles, out.plain))
 	return exitOK
 }
@@ -414,13 +452,8 @@ func checkPlanLive(ctx context.Context, box msb.CLI, info gitx.Info, cfg config.
 		live.Drift = entries
 	}
 	boot, err := assessBootstrap(ip, s.CreatedAt)
-	switch boot {
-	case bootstrapComplete:
-		live.Bootstrap = "complete"
-	case bootstrapChanged:
-		live.Bootstrap = "changed"
-	case bootstrapIncomplete:
-		live.Bootstrap = "incomplete"
+	if boot != bootstrapNotDeclared {
+		live.Bootstrap = bootstrapWord(boot)
 	}
 	if err != nil {
 		live.BootstrapErr = err

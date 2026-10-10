@@ -44,10 +44,11 @@ import (
 // Bootstrap is reported, never silently retried: only --retry-bootstrap
 // runs it again.
 func runUp(ctx context.Context, args []string, out *output) int {
-	flags, err := parsePersistentFlags("up", args, []string{"--allow-stale", "--retry-bootstrap"})
+	flags, err := parsePersistentFlags("up", args, []string{"--allow-stale", "--retry-bootstrap", "--json"})
 	if err != nil {
 		return out.usagef("%v", err)
 	}
+	out.json = flags["--json"]
 	allowStale := flags["--allow-stale"]
 	retryBootstrap := flags["--retry-bootstrap"]
 
@@ -70,7 +71,14 @@ func runUp(ctx context.Context, args []string, out *output) int {
 		// completed for this incarnation, and plain up never retries it.
 		return out.fail(fmt.Errorf("bootstrap for %s is incomplete: it never completed for this sandbox.\n\n%s", p.id.Sandbox, incompleteGuidance(p.id.Sandbox)))
 	}
-	fmt.Fprintf(out.stdout, "%s %s\n%s\n", out.styles.Heading.Render("persistent sandbox:"), p.id.Sandbox, action)
+	if out.json {
+		return out.writeJSON(upResult{
+			Sandbox: p.id.Sandbox, Created: action.created, Started: action.started,
+			ImageContents: action.digest, Bootstrap: bootstrapWord(boot), BootstrapRan: action.bootstrapRan,
+			PublishedPorts: action.ports, Drift: action.drift,
+		})
+	}
+	fmt.Fprintf(out.stdout, "%s %s\n%s\n", out.styles.Heading.Render("persistent sandbox:"), p.id.Sandbox, action.prose)
 	if boot == bootstrapChanged {
 		fmt.Fprintf(out.stdout, "bootstrap: complete, but the definition has changed since it ran; that is not Creation drift and does not block use\n")
 	}
@@ -121,9 +129,11 @@ func runExec(ctx context.Context, args []string, stdin io.Reader, out *output) i
 // state, and Creation drift. It never mutates the backend and never writes
 // sbx state, and it stays usable when the sandbox has drifted.
 func runStatus(ctx context.Context, args []string, out *output) int {
-	if _, err := parsePersistentFlags("status", args, nil); err != nil {
+	flags, err := parsePersistentFlags("status", args, []string{"--json"})
+	if err != nil {
 		return out.usagef("%v", err)
 	}
+	out.json = flags["--json"]
 	info, cfg, err := out.discoverConfig(ctx)
 	if err != nil {
 		return out.fail(err)
@@ -134,12 +144,20 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 		return out.fail(err)
 	}
 
-	fmt.Fprintf(out.stdout, "%s %s\n", out.styles.Heading.Render("persistent sandbox:"), id.Sandbox)
+	report := statusResult{Sandbox: id.Sandbox}
+	if !out.json {
+		fmt.Fprintf(out.stdout, "%s %s\n", out.styles.Heading.Render("persistent sandbox:"), id.Sandbox)
+	}
 	_, exists, err := findSandbox(ctx, box, id.Sandbox)
 	if err != nil {
 		return out.fail(err)
 	}
 	if !exists {
+		if out.json {
+			declared := cfg.BootstrapDeclared()
+			report.BootstrapDeclared = &declared
+			return out.writeJSON(report)
+		}
 		fmt.Fprintf(out.stdout, "status: not created; run `sbx up` to create it\n")
 		if cfg.BootstrapDeclared() {
 			fmt.Fprintf(out.stdout, "bootstrap: declared; it will run after the sandbox is created\n")
@@ -151,14 +169,25 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 	if err != nil {
 		return out.fail(err)
 	}
-	if !isOwned(s) {
+	owned := isOwned(s)
+	report.Exists = true
+	report.Owned = &owned
+	report.Status = s.Status
+	if !owned {
+		if out.json {
+			return out.writeJSON(report)
+		}
 		fmt.Fprintf(out.stdout, "status: %s, but sbx did not create it; sbx never adopts a sandbox it does not own\n", s.Status)
 		return exitOK
 	}
-	fmt.Fprintf(out.stdout, "status: %s\n", s.Status)
-	fmt.Fprintf(out.stdout, "created at: %s\n", formatCreated(s.CreatedAt))
-	if eff := s.EffectiveConfig(); eff.ManifestDigest != "" {
-		fmt.Fprintf(out.stdout, "created from image contents: %s\n", eff.ManifestDigest)
+	report.CreatedAt = s.CreatedAt
+	report.CreatedFromImageContents = s.EffectiveConfig().ManifestDigest
+	if !out.json {
+		fmt.Fprintf(out.stdout, "status: %s\n", s.Status)
+		fmt.Fprintf(out.stdout, "created at: %s\n", formatCreated(s.CreatedAt))
+		if report.CreatedFromImageContents != "" {
+			fmt.Fprintf(out.stdout, "created from image contents: %s\n", report.CreatedFromImageContents)
+		}
 	}
 
 	// Drift is reported here, never enforced: status stays usable exactly
@@ -168,6 +197,10 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 	if trErr != nil {
 		// A configuration that cannot translate (a missing bind source,
 		// say) still leaves the identity and backend state worth reporting.
+		if out.json {
+			report.Drift = &driftResult{Unknown: fmt.Sprintf("the current configuration does not translate: %v", trErr)}
+			return out.writeJSON(report)
+		}
 		fmt.Fprintf(out.stdout, "%s\n", out.styles.Warning.Render(fmt.Sprintf("drift: unknown (the current configuration does not translate: %v)", trErr)))
 		return exitOK
 	}
@@ -177,21 +210,33 @@ func runStatus(ctx context.Context, args []string, out *output) int {
 	if err != nil {
 		return out.fail(err)
 	}
-	if len(notes) == 0 && len(entries) == 0 {
-		fmt.Fprintf(out.stdout, "%s\n", out.styles.Positive.Render("drift: none"))
-	} else {
-		fmt.Fprintf(out.stdout, "%s\n%s\n", out.styles.Heading.Render("drift (up and exec refuse this; status does not):"), renderDrift(out, notes, entries))
+	report.Drift = projectDrift(notes, entries)
+	if !out.json {
+		if len(notes) == 0 && len(entries) == 0 {
+			fmt.Fprintf(out.stdout, "%s\n", out.styles.Positive.Render("drift: none"))
+		} else {
+			fmt.Fprintf(out.stdout, "%s\n%s\n", out.styles.Heading.Render("drift (up and exec refuse this; status does not):"), renderDrift(out, notes, entries))
+		}
 	}
 
 	// Published ports are reported read-only: what the backend says, and
 	// any registry discrepancy, without correcting or reserving.
-	reportPorts(id.Sandbox, s, out.stdout, out.styles)
+	report.Ports = collectPorts(id.Sandbox, s)
+	if !out.json {
+		renderPorts(report.Ports, out.stdout, out.styles)
+	}
 
 	// Bootstrap state is reported like drift: never enforced here, and a
 	// changed definition is reported without counting as Creation drift.
 	boot, err := assessBootstrap(p, s.CreatedAt)
 	if err != nil {
 		return out.fail(err)
+	}
+	if out.json {
+		if boot != bootstrapNotDeclared {
+			report.Bootstrap = bootstrapWord(boot)
+		}
+		return out.writeJSON(report)
 	}
 	switch boot {
 	case bootstrapComplete:
@@ -239,9 +284,11 @@ func runLogs(ctx context.Context, args []string, out *output) int {
 // per-sandbox lock is held across the inspect-and-stop section so a
 // concurrent up cannot race a creation or bootstrap mid-stop.
 func runStop(ctx context.Context, args []string, out *output) int {
-	if _, err := parsePersistentFlags("stop", args, nil); err != nil {
+	flags, err := parsePersistentFlags("stop", args, []string{"--json"})
+	if err != nil {
 		return out.usagef("%v", err)
 	}
+	out.json = flags["--json"]
 	id, err := discoverIdentity(ctx)
 	if err != nil {
 		return out.fail(err)
@@ -270,11 +317,17 @@ func runStop(ctx context.Context, args []string, out *output) int {
 		return out.fail(errUnowned(id.Sandbox))
 	}
 	if !msb.IsRunning(entry.Status) {
+		if out.json {
+			return out.writeJSON(stopResult{Sandbox: id.Sandbox, Stopped: false})
+		}
 		fmt.Fprintf(out.stdout, "%s %s\nalready stopped; its state and volumes are kept\n", out.styles.Heading.Render("persistent sandbox:"), id.Sandbox)
 		return exitOK
 	}
 	if err := box.Stop(ctx, id.Sandbox); err != nil {
 		return out.fail(err)
+	}
+	if out.json {
+		return out.writeJSON(stopResult{Sandbox: id.Sandbox, Stopped: true})
 	}
 	fmt.Fprintf(out.stdout, "%s %s\nstopped; its state and volumes are kept, and `sbx up` starts it again\n", out.styles.Heading.Render("persistent sandbox:"), id.Sandbox)
 	return exitOK
@@ -291,10 +344,11 @@ func runStop(ctx context.Context, args []string, out *output) int {
 // removal and its state cleanup, after the prompt, so an interactive
 // confirmation never blocks a concurrent sbx process.
 func runRm(ctx context.Context, args []string, stdin io.Reader, out *output) int {
-	yes, err := parsePersistentFlags("rm", args, []string{"--yes"})
+	yes, err := parsePersistentFlags("rm", args, []string{"--yes", "--json"})
 	if err != nil {
 		return out.usagef("%v", err)
 	}
+	out.json = yes["--json"]
 	confirmed := yes["--yes"]
 	id, err := discoverIdentity(ctx)
 	if err != nil {
@@ -351,6 +405,22 @@ func runRm(ctx context.Context, args []string, stdin io.Reader, out *output) int
 		return out.fail(errors.Join(delSnapErr, delMarkerErr))
 	}
 
+	if out.json {
+		result := rmResult{Sandbox: id.Sandbox, Removed: true}
+		switch {
+		case errors.Is(snapErr, state.ErrNoSnapshot):
+			result.SandboxVolumesUnknown = "no creation snapshot recorded their list"
+		case snapErr != nil:
+			result.SandboxVolumesUnknown = snapErr.Error()
+		default:
+			owned := make([]sandboxVolume, 0, len(snap.Definition.Options.Owned))
+			for _, v := range snap.Definition.Options.Owned {
+				owned = append(owned, sandboxVolume{Target: v.Target, Kind: v.Kind, Size: v.Size})
+			}
+			result.SandboxVolumes = &owned
+		}
+		return out.writeJSON(result)
+	}
 	fmt.Fprintf(out.stdout, "%s %s\nremoved.\n", out.styles.Heading.Render("persistent sandbox:"), id.Sandbox)
 	fmt.Fprintf(out.stdout, "its creation snapshot and Bootstrap completion record (if any) were cleared from host state.\n")
 	switch {
@@ -455,50 +525,56 @@ func discoverIdentity(ctx context.Context) (identity.Identity, error) {
 // never held while a user's guest command runs. Bootstrap runs once after
 // each creation; a later incomplete state is retried only when the caller
 // passed --retry-bootstrap, and completion is recorded only on success.
-func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, retryBootstrap bool, out *output) (string, bootstrapState, error) {
+func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, retryBootstrap bool, out *output) (runningAction, bootstrapState, error) {
+	action := runningAction{ports: []portEndpoint{}}
 	lock, err := lockSandbox(p.id.Sandbox, out.stderr)
 	if err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 	defer lock.Release()
 
 	if _, err := box.LocalContext(ctx); err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 	entry, exists, err := findSandbox(ctx, box, p.id.Sandbox)
 	if err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 
 	if !exists {
 		// Every declared Project volume is checked against the backend's
 		// existing volumes before anything is created or pulled.
 		if err := checkProjectVolumes(ctx, box, p.tr.ProjectVolumes); err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
 		digest, err := ensureImage(ctx, box, p.cfg)
 		if err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
+		action.digest = digest
 		// The declared image check gates the image before anything is
 		// created from it.
 		if err := ensureImageChecked(ctx, box, p.cfg, p.info.WorktreeRoot, p.id.Sandbox, out); err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
 		cleanup, err := materializeGeneratedFiles(&p.tr)
 		defer cleanup()
 		if err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
 		// Declared ports are reserved — or reused from the registry — before
 		// anything is created; a failure here changes nothing at all.
 		assigns, err := reservePorts(ctx, box, p)
 		if err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
+		}
+		for _, a := range assigns {
+			action.ports = append(action.ports, portEndpoint{Name: a.Name, Host: a.Host, Guest: a.Guest})
 		}
 		if err := box.Create(ctx, p.tr.Options); err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
+		action.created = true
 		// The snapshot is what drift detection compares against later; it
 		// is written only after creation succeeded, so a failed creation
 		// leaves no snapshot behind.
@@ -506,7 +582,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			ImageDigest: digest,
 			Definition:  state.DefinitionOf(p.tr),
 		}); err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
 		// Once the sandbox exists, what msb inspect reports is authoritative:
 		// the registry is corrected to match, failing rather than taking a
@@ -514,41 +590,46 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		// sandbox in place — sbx never removes a partially created sandbox
 		// to retry a port.
 		if err := reconcileCreatedPorts(ctx, box, p); err != nil {
-			return "", bootstrapNotDeclared, err
+			return action, bootstrapNotDeclared, err
 		}
 		if !p.cfg.BootstrapDeclared() {
-			return withPorts(fmt.Sprintf("created from %s (image contents %s) and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), assigns, out.styles), bootstrapNotDeclared, nil
+			action.prose = withPorts(fmt.Sprintf("created from %s (image contents %s) and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), action.ports, out.styles)
+			return action, bootstrapNotDeclared, nil
 		}
 		// Bootstrap runs in the new sandbox before anything else uses it.
 		// The marker binds its completion to this incarnation's created_at,
 		// so a later sandbox of the same identity never inherits it.
 		s, err := box.Inspect(ctx, p.id.Sandbox)
 		if err != nil {
-			return "", bootstrapIncomplete, err
+			return action, bootstrapIncomplete, err
 		}
 		if err := runBootstrap(ctx, box, p, s.CreatedAt, out); err != nil {
-			return "", bootstrapIncomplete, &bootstrapFailure{err}
+			return action, bootstrapIncomplete, &bootstrapFailure{err}
 		}
-		return withPorts(fmt.Sprintf("created from %s (image contents %s), bootstrapped, and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), assigns, out.styles), bootstrapComplete, nil
+		action.bootstrapRan = true
+		action.prose = withPorts(fmt.Sprintf("created from %s (image contents %s), bootstrapped, and left running; run `sbx exec -- <command>` to work in it", p.cfg.Image, digest), action.ports, out.styles)
+		return action, bootstrapComplete, nil
 	}
 
 	// A same-named sandbox exists: sbx touches it only when it carries the
 	// sbx.managed label.
 	s, err := box.Inspect(ctx, p.id.Sandbox)
 	if err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 	if !isOwned(s) {
-		return "", bootstrapNotDeclared, errUnowned(p.id.Sandbox)
+		return action, bootstrapNotDeclared, errUnowned(p.id.Sandbox)
 	}
+	action.digest = s.EffectiveConfig().ManifestDigest
 
 	notes, entries, err := driftReport(ctx, box, p)
 	if err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
+	action.drift = projectDrift(notes, entries)
 	if len(notes) > 0 || len(entries) > 0 {
 		if !allowStale {
-			return "", bootstrapNotDeclared, fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(out, notes, entries))
+			return action, bootstrapNotDeclared, fmt.Errorf("the persistent sandbox has drifted from sbx.toml:\n%s\nsbx never removes or recreates a sandbox that may hold private data; remove it yourself with `sbx rm` and run `sbx up` again, or pass --allow-stale to use it as-is", renderDrift(out, notes, entries))
 		}
 		fmt.Fprintf(out.stderr, "%s using %s despite drift:\n%s", out.styles.Warning.Render("warning:"), p.id.Sandbox, renderDrift(out, notes, entries))
 	}
@@ -558,7 +639,7 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	// unmet or unverifiable check refuses use without touching the
 	// sandbox or its data.
 	if err := ensureSandboxImageChecked(ctx, box, p, s.EffectiveConfig().ManifestDigest, out); err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 
 	// The sandbox exists, so its inspection report is authoritative: a
@@ -567,12 +648,11 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 	// drift, whose report says how to proceed, not as a registry
 	// verification failure that does not.
 	if err := reconcilePorts(p, s); err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 
-	var action string
 	if msb.IsRunning(entry.Status) {
-		action = "already running"
+		action.prose = "already running"
 	} else {
 		// msb re-resolves each secret from its own environment on every
 		// start (verified on a real host), so a restart carries
@@ -587,11 +667,12 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 			// authoritative evidence that the sandbox is up, which is all
 			// ensureRunning needs.
 			if !errors.Is(err, msb.ErrAlreadyRunning) {
-				return "", bootstrapNotDeclared, err
+				return action, bootstrapNotDeclared, err
 			}
-			action = "already running"
+			action.prose = "already running"
 		} else {
-			action = "started; its state and volumes were kept"
+			action.started = true
+			action.prose = "started; its state and volumes were kept"
 		}
 	}
 
@@ -599,13 +680,14 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		// The reuse report names the endpoints inspection is authoritative
 		// for, exactly as a creation report does.
 		if actual, perr := s.PortsOf(); perr == nil && len(actual) > 0 {
-			action += "; published ports:\n" + formatEndpoints(p.tr.Ports, actual)
+			action.ports = namedEndpoints(p.tr.Ports, actual)
+			action.prose += "; published ports:\n" + formatEndpoints(action.ports)
 		}
 	}
 
 	boot, err := assessBootstrap(p, s.CreatedAt)
 	if err != nil {
-		return "", bootstrapNotDeclared, err
+		return action, bootstrapNotDeclared, err
 	}
 	// --retry-bootstrap runs the current definition for an incomplete or
 	// a changed Bootstrap — the definition that ran no longer matching
@@ -615,7 +697,8 @@ func ensureRunning(ctx context.Context, box msb.CLI, p *persistent, allowStale, 
 		if err := runBootstrap(ctx, box, p, s.CreatedAt, out); err != nil {
 			return action, boot, &bootstrapFailure{err}
 		}
-		action += "; bootstrap ran again and its completion was recorded"
+		action.bootstrapRan = true
+		action.prose += "; bootstrap ran again and its completion was recorded"
 		boot = bootstrapComplete
 	}
 	return action, boot, nil

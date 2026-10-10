@@ -1,0 +1,10 @@
+{
+  "sandbox": "<sandbox-id>",
+  "exists": true,
+  "owned": true,
+  "status": "Running",
+  "created_at": "<created-at>",
+  "created_from_image_contents": "sha256:fake",
+  "drift": {},
+  "bootstrap": "changed"
+}

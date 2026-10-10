@@ -15,9 +15,11 @@ import (
 	"github.com/ngscheurich/sbx/internal/ui"
 )
 
-// listRow is one rendered line of the listing.
 type listRow struct {
-	name, image, status, created string
+	Name      string `json:"name"`
+	Image     string `json:"image"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
 }
 
 // runList implements `sbx list`: every Owned sandbox the backend holds,
@@ -32,7 +34,7 @@ func runList(ctx context.Context, out *output) int {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 
-	var rows []listRow
+	rows := make([]listRow, 0, len(entries))
 	for _, e := range entries {
 		s, err := msb.CLI{}.Inspect(ctx, e.Name)
 		if err != nil {
@@ -41,7 +43,10 @@ func runList(ctx context.Context, out *output) int {
 		if !isOwned(s) {
 			continue
 		}
-		rows = append(rows, listRow{name: e.Name, image: e.Image, status: e.Status, created: formatCreated(e.CreatedAt)})
+		rows = append(rows, listRow{Name: e.Name, Image: e.Image, Status: e.Status, CreatedAt: e.CreatedAt})
+	}
+	if out.json {
+		return out.writeJSON(rows)
 	}
 	if len(rows) == 0 {
 		fmt.Fprintln(out.stdout, "no sbx sandboxes")
@@ -70,7 +75,7 @@ func renderList(out *output, rows []listRow) {
 	headers := []string{"name", "image", "status", "created"}
 	tableRows := make([][]string, len(rows))
 	for i, r := range rows {
-		tableRows[i] = []string{r.name, r.image, r.status, r.created}
+		tableRows[i] = []string{r.Name, r.Image, r.Status, formatCreated(r.CreatedAt)}
 	}
 	fmt.Fprintln(out.stdout, strings.TrimRight(ui.Table(out.plain, headers, tableRows), "\n"))
 }

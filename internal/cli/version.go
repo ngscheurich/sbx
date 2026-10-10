@@ -11,25 +11,21 @@ import (
 	"strings"
 )
 
-// versionString renders the `sbx version` line from build information: the
-// module version (a release tag for `go install …@version`, "devel" for a
-// checkout build) plus the stamped VCS revision, shortened the way Git
-// itself prints one, and a marker when the working tree was dirty. An
-// unstamped build — -buildvcs=false, a source tarball, a zero value — has
-// nothing to name, so it falls back to the development-build line.
-func versionString(bi *debug.BuildInfo) string {
-	var revision string
-	modified := false
+type versionReport struct {
+	Version  string `json:"version"`
+	Commit   string `json:"commit"`
+	Modified bool   `json:"modified"`
+}
+
+func versionData(bi *debug.BuildInfo) versionReport {
+	report := versionReport{Version: "devel"}
 	for _, s := range bi.Settings {
 		switch s.Key {
 		case "vcs.revision":
-			revision = s.Value
+			report.Commit = s.Value
 		case "vcs.modified":
-			modified = s.Value == "true"
+			report.Modified = s.Value == "true"
 		}
-	}
-	if revision == "" {
-		return "sbx (development build)"
 	}
 	version := bi.Main.Version
 	// A pseudo-version is Go's name for an untagged commit; it restates the
@@ -38,19 +34,26 @@ func versionString(bi *debug.BuildInfo) string {
 	if version == "" || version == "(devel)" || strings.HasPrefix(version, "v0.0.0-") {
 		version = "devel"
 	}
-	suffix := ""
-	if modified {
-		suffix = ", modified"
-	}
-	return fmt.Sprintf("sbx %s (commit %.12s%s)", version, revision, suffix)
+	report.Version = version
+	return report
 }
 
-// currentVersion reads the running binary's build information. A failure
-// leaves the report empty, which versionString renders as the fallback.
-func currentVersion() string {
+// String shortens the commit for display, falling back when none was stamped.
+func (r versionReport) String() string {
+	if r.Commit == "" {
+		return "sbx (development build)"
+	}
+	suffix := ""
+	if r.Modified {
+		suffix = ", modified"
+	}
+	return fmt.Sprintf("sbx %s (commit %.12s%s)", r.Version, r.Commit, suffix)
+}
+
+func currentVersion() versionReport {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
-		return versionString(&debug.BuildInfo{})
+		return versionData(&debug.BuildInfo{})
 	}
-	return versionString(bi)
+	return versionData(bi)
 }
