@@ -483,6 +483,9 @@ volumes)
   printf '%s]\n' "$out"
   ;;
 exec|run)
+  if [ "$1" = "run" ]; then
+    trap 'rm -f "$store"/vol-owned-run-"$n"-*' 0
+  fi
   prev=""
   is_check=0
   for a in "$@"; do
@@ -514,9 +517,6 @@ exec|run)
   fi
   printf 'guest-stdout\n'
   printf 'guest-stderr\n' >&2
-  # A disposable run's owned volumes are removed with it; named volumes
-  # persist.
-  rm -f "$store"/vol-owned-run-"$n"-*
   # An image-check exec has its own exit status, so a test can fail the
   # check without failing every other guest command.
   if [ "$is_check" = 1 ]; then

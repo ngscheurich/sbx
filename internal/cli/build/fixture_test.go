@@ -6,8 +6,6 @@ package build
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,85 +19,16 @@ import (
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
-// copyFixture copies a fixture directory's files into dst, preserving
-// relative paths, and returns the list of files copied.
-func copyFixture(t *testing.T, fixture, dst string) []string {
-	t.Helper()
-	var copied []string
-	err := filepath.Walk(fixture, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(fixture, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		if err := copyFile(path, target, info.Mode()); err != nil {
-			return err
-		}
-		copied = append(copied, rel)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("copying fixture %s: %v", fixture, err)
-	}
-	return copied
-}
-
-func copyFile(src, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
-}
-
-// fixtureRepoFrom copies a fixture into a temporary Git repository as a
-// linked worktree and returns the worktree path.
-func fixtureRepoFrom(t *testing.T, fixture string) string {
-	t.Helper()
-	repo := harness.SeedRepo(t)
-	worktree := filepath.Join(t.TempDir(), "wt1")
-	harness.Git(t, repo, "worktree", "add", worktree, "-b", "feature")
-	copyFixture(t, fixture, worktree)
-	return harness.Resolve(t, worktree)
-}
-
 // fixtureRestrictedDir is the restricted CLI fixture's path relative to this
 // package.
 const fixtureRestrictedDir = "../../../fixtures/restricted-cli"
 
-// TestFixtureRestrictedFailsClosedImageCheck copies the complete fixture and
-// checks that `sbx run` refuses it before any backend call once it declares
-// a not-yet-supported field: image_check is rejected by strict configuration
-// parsing, before any backend call. Fail-closed is the contract; which
-// gate fires first may change as the remaining features land.
-func TestFixtureRestrictedFailsClosedImageCheck(t *testing.T) {
+func TestFixtureRestrictedRejectsUnknownBuildField(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
-	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// The verbatim fixture is fully supported now; the variant adds
-	// image_check, which no build of sbx translates yet, derived from the
-	// fixture file so the two cannot drift.
+	worktree := harness.FixtureWorktrees(t, fixtureRestrictedDir, 1)[0]
 	variant := testsupport.FixtureTOML(t,
-		filepath.Join(fixtureRestrictedDir, "sbx.toml")) + "\nimage_check = \"image-check.sh\"\n"
+		filepath.Join(fixtureRestrictedDir, "sbx.toml")) + "\nunsupported = true\n"
 	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +37,7 @@ func TestFixtureRestrictedFailsClosedImageCheck(t *testing.T) {
 		return cli.Run(context.Background(), []string{"run", "--", "go", "version"}, nil, &stdout, &stderr)
 	})
 	if code == 0 {
-		t.Fatal("run succeeded on the fixture variant, which declares a not-yet-supported field")
+		t.Fatal("run succeeded with an unknown build field")
 	}
 	if got := fake.Calls(); len(got) != 0 {
 		t.Errorf("msb was called before rejection: %v", got)
@@ -124,7 +53,7 @@ func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
 	dockerLog := testsupport.FakeDocker(t)
 	t.Setenv("TMPDIR", t.TempDir())
 	t.Setenv("FAKE_MSB_LOAD_REQUIRES", dockerLog.SavedMarker())
-	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
+	worktree := harness.FixtureWorktrees(t, fixtureRestrictedDir, 1)[0]
 
 	var stdout, stderr bytes.Buffer
 	code := harness.Chdir(t, worktree, func() int {
@@ -163,7 +92,7 @@ func TestFixtureRestrictedBuildVerbatim(t *testing.T) {
 // the allowlist with DNS, and the redacted secret map.
 func TestFixtureRestrictedPlanTranslation(t *testing.T) {
 	testsupport.FakeMSB(t)
-	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
+	worktree := harness.FixtureWorktrees(t, fixtureRestrictedDir, 1)[0]
 
 	var stdout, stderr bytes.Buffer
 	code := harness.Chdir(t, worktree, func() int {
@@ -199,15 +128,7 @@ func TestFixtureRestrictedPlanTranslation(t *testing.T) {
 func TestFixtureRestrictedRunTranslation(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("SBX_FIXTURE_TOKEN", "throwaway-fixture-token")
-	worktree := fixtureRepoFrom(t, fixtureRestrictedDir)
-	// Both features have landed, so the full verbatim fixture runs as-is;
-	// derived from the fixture file so the two cannot drift.
-	variant := testsupport.FixtureTOML(t,
-		filepath.Join(fixtureRestrictedDir, "sbx.toml"))
-	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(variant), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
+	worktree := harness.FixtureWorktrees(t, fixtureRestrictedDir, 1)[0]
 	var stdout, stderr bytes.Buffer
 	code := harness.Chdir(t, worktree, func() int {
 		return cli.Run(context.Background(), []string{"run"}, strings.NewReader(""), &stdout, &stderr)
@@ -279,28 +200,11 @@ const fixtureStatefulDir = "../../../fixtures/stateful-web"
 // worktrees of one repository and checks `sbx up` across them: identity
 // reuse within a worktree, distinct identities and loopback ports across
 // worktrees, and each create's --port carrying the reserved port.
-//
-// The image_check line is stripped until ticket 10 lands: the fixture is
-// verbatim, and the variant derives from the fixture file so the two
-// cannot drift.
 func TestFixtureStatefulWebUpAndPorts(t *testing.T) {
 	fake := testsupport.FakeMSB(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	repo := harness.SeedRepo(t)
-
-	variant := testsupport.FixtureWithoutLines(t,
-		filepath.Join(fixtureStatefulDir, "sbx.toml"), "image_check")
-	worktrees := make([]string, 2)
-	for i := range worktrees {
-		wt := filepath.Join(t.TempDir(), fmt.Sprintf("wt%d", i+1))
-		harness.Git(t, repo, "worktree", "add", wt, "-b", fmt.Sprintf("feature%d", i+1))
-		copyFixture(t, fixtureStatefulDir, wt)
-		if err := os.WriteFile(filepath.Join(wt, "sbx.toml"), []byte(variant), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		worktrees[i] = wt
-	}
+	worktrees := harness.FixtureWorktrees(t, fixtureStatefulDir, 2)
 
 	ids := make([]string, 2)
 	ports := make([]string, 2)

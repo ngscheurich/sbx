@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,6 +70,26 @@ func FixtureRepo(t *testing.T, toml string) (worktree, repo string) {
 		t.Fatal(err)
 	}
 	return Resolve(t, worktree), Resolve(t, repo)
+}
+
+// FixtureWorktrees commits a complete fixture copy in a temporary repository
+// and returns count linked worktrees with the same source and executable bits.
+func FixtureWorktrees(t *testing.T, fixture string, count int) []string {
+	t.Helper()
+	repo := SeedRepo(t)
+	if err := os.CopyFS(repo, os.DirFS(fixture)); err != nil {
+		t.Fatalf("copying fixture %s: %v", fixture, err)
+	}
+	Git(t, repo, "add", ".")
+	Git(t, repo, "commit", "-m", "fixture")
+	worktrees := make([]string, count)
+	for i := range worktrees {
+		name := fmt.Sprintf("wt%d", i+1)
+		path := filepath.Join(t.TempDir(), name)
+		Git(t, repo, "worktree", "add", path, "-b", name)
+		worktrees[i] = Resolve(t, path)
+	}
+	return worktrees
 }
 
 // Resolve returns the absolute, symlink-free form of path — the same form

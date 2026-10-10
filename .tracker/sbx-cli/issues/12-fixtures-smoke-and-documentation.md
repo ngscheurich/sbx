@@ -1,6 +1,6 @@
 # Complete fixtures, smoke test and user documentation
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 04, 05, 07, 08, 09, 10, 11
 
 ## Goal
@@ -16,3 +16,11 @@ Finish and test both acceptance projects exactly as described in [the spec](../s
 ## References
 
 [Acceptance fixtures and verification](../spec.md); [CONTEXT.md](../../../CONTEXT.md).
+
+## Comments
+
+Implemented complete fixture acceptance coverage in `internal/cli/build/fixture_acceptance_test.go`, shared committed fixture copies in `internal/harness/seed.go`, executable stateful guest scripts, and the opt-in real-host test in `internal/cli/smoke/smoke_test.go`. Legacy acceptance tests now retain Image checks. The fake backend cleans disposable private storage on early failure as well as normal completion. `README.md` documents installation, commands, the current `network.policy` configuration surface, lifecycle safety, and verification limits; `exec` and `run` remain provisional.
+
+Validation: `go build ./...`, targeted fixture and smoke-runner tests, `go test -race ./...`, `go vet ./...`, `go mod tidy -diff`, formatting, and diff checks passed. Standards review against `ee30078` found three issues (subprocess wait bounds, context parameter order, and host-path construction), all corrected; Spec review found none.
+
+Real-host smoke: **not run** on this environment because Docker is missing and `/dev/kvm` is unavailable. No real-host behavior was verified in this completion. Fake-backed runner tests checked successful orchestration, missing-prerequisite reporting, cleanup after partial persistent creation/Bootstrap failure, and preservation of an unrelated sandbox. Live allowlist enforcement, secret destination enforcement, volume deletion, HTTP behavior, and guest signal forwarding remain unverified.
