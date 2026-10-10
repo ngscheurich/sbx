@@ -48,6 +48,10 @@ read_only = true
 [network]
 policy = "public"
 
+[secrets.OPENROUTER_API_KEY]
+from_env = "SBX_OPENROUTER_API_KEY"
+allow = ["openrouter.ai"]
+
 [aliases]
 sh = "exec -- bash"
 pi = "exec -- pi"
