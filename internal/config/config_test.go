@@ -924,11 +924,18 @@ func TestLoadAliases(t *testing.T) {
 [aliases]
 ls = "exec -- ls"
 ll = "ls"
+exec = "status"
+help = "status"
+version = "status"
+list = "status"
 `))
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	want := map[string]string{"ls": "exec -- ls", "ll": "ls"}
+	want := map[string]string{
+		"ls": "exec -- ls", "ll": "ls", "exec": "status",
+		"help": "status", "version": "status", "list": "status",
+	}
 	for name, value := range want {
 		if got := cfg.Aliases[name]; got != value {
 			t.Errorf("aliases[%q] = %q, want %q", name, got, value)

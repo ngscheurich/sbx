@@ -4,7 +4,6 @@
 package cli_test
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,6 +53,22 @@ func TestAliasDispatchesAsIfTyped(t *testing.T) {
 	want := []string{"exec", id, "--workdir", "/workspace", "--stream", "--", "ls", "-la"}
 	if !harness.Equal(execCall.Args, want) {
 		t.Errorf("exec argv mismatch:\n got: %q\nwant: %q", execCall.Args, want)
+	}
+}
+
+func TestAliasMatchesDirectInvocation(t *testing.T) {
+	config := harness.PersistentTOML + "\n[aliases]\nls = 'exec -- ls'\nll = 'ls'\n"
+	for _, args := range [][]string{{"ls"}, {"ls", "-la"}, {"ll", "-la", "", "two words"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			worktree, _ := harness.PersistentFixture(t, config)
+			t.Setenv("FAKE_MSB_EXIT", "7")
+			direct := append([]string{"exec", "--", "ls"}, args[1:]...)
+			directCode, directOut, directErr := harness.SbxRun(t, worktree, direct, nil)
+			code, stdout, stderr := harness.SbxRun(t, worktree, args, nil)
+			if directCode != 7 || code != directCode || stdout != directOut || stderr != directErr {
+				t.Fatalf("alias=(%d, %q, %q), direct=(%d, %q, %q)", code, stdout, stderr, directCode, directOut, directErr)
+			}
+		})
 	}
 }
 
@@ -115,45 +130,121 @@ tail = "list --no-color"
 	}
 }
 
-// TestAliasChainTooDeep checks that a self-referential alias fails fast
-// with a usage error instead of recursing forever.
 func TestAliasChainTooDeep(t *testing.T) {
-	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML+"\n[aliases]\na = \"a\"\n")
-
-	code, _, stderr := harness.SbxRun(t, worktree, []string{"a"}, nil)
-	if code != exitUsage {
-		t.Errorf("exit code = %d, want %d, stderr:\n%s", code, exitUsage, stderr)
+	cases := []struct {
+		name    string
+		aliases string
+	}{
+		{name: "self-reference", aliases: "a = 'a'\n"},
+		{name: "cycle", aliases: "a = 'b'\nb = 'a'\n"},
+		{name: "three aliases", aliases: "a = 'b'\nb = 'c'\nc = 'exec -- true'\n"},
 	}
-	if !strings.Contains(stderr, "alias chain too deep") {
-		t.Errorf("stderr = %q, want it to report the chain depth", stderr)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree, fake := harness.PersistentFixture(t, harness.PersistentTOML+"\n[aliases]\n"+tc.aliases)
+			code, stdout, stderr := harness.SbxRun(t, worktree, []string{"a"}, nil)
+			if code != exitUsage || stdout != "" || !strings.Contains(stderr, "alias chain too deep") {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			if calls := fake.Calls(); len(calls) != 0 {
+				t.Errorf("backend called before rejecting the alias chain:\n%s", harness.CallDump(calls))
+			}
+		})
 	}
 }
 
-// TestShadowedAliasWarnsAndBuiltinWins checks that invoking a name that is
-// both a builtin and an alias runs the builtin, warns once on stderr, and
-// never consults the alias.
 func TestShadowedAliasWarnsAndBuiltinWins(t *testing.T) {
-	worktree, fake := harness.PersistentFixture(t, aliasTOML)
+	cases := []struct {
+		name       string
+		forceColor string
+		noColor    string
+		plain      bool
+		styled     bool
+	}{
+		{name: "pipe", forceColor: "0"},
+		{name: "NO_COLOR", forceColor: "1", noColor: "1"},
+		{name: "plain flag", forceColor: "1", plain: true},
+		{name: "styled", forceColor: "1", styled: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree, fake := harness.PersistentFixture(t, aliasTOML)
+			t.Setenv("CLICOLOR_FORCE", tc.forceColor)
+			t.Setenv("NO_COLOR", tc.noColor)
+			args := []string{"exec", "--", "echo", "hello"}
+			if tc.plain {
+				args = append([]string{"--plain"}, args...)
+			}
+			code, stdout, stderr := harness.SbxRun(t, worktree, args, nil)
+			if code != 0 || stdout != "guest-stdout\n" {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			warning := `"exec" is also declared in [aliases]; the builtin command runs`
+			if !strings.Contains(stderr, warning) || strings.Count(stderr, "warning:") != 1 {
+				t.Errorf("expected one shadowing warning, got %q", stderr)
+			}
+			if got := strings.ContainsRune(stderr, '\x1b'); got != tc.styled {
+				t.Errorf("ANSI=%t, want %t: %q", got, tc.styled, stderr)
+			}
+			if !tc.styled && stderr != "warning: "+warning+"\nguest-stderr\n" {
+				t.Errorf("Plain warning or guest stderr changed: %q", stderr)
+			}
+			found := false
+			for _, call := range fake.Calls() {
+				if call.Args[0] == "exec" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("the builtin exec did not reach the backend")
+			}
+			code, _, stderr = harness.SbxRun(t, worktree, []string{"status"}, nil)
+			if code != 0 || stderr != "" {
+				t.Errorf("an unrelated command warned: code=%d stderr=%q", code, stderr)
+			}
+		})
+	}
+}
 
-	code, _, stderr := harness.SbxRun(t, worktree, []string{"exec", "--", "echo", "hello"}, nil)
-	if code != 0 {
-		t.Fatalf("exec exit code = %d, stderr:\n%s", code, stderr)
+func TestAliasesOnlyResolveFirstWord(t *testing.T) {
+	worktree, fake := harness.PersistentFixture(t, aliasTOML)
+	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"port", "ls"}, nil)
+	if code != exitUsage || stdout != "" || !strings.Contains(stderr, `unknown port command "ls"`) {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if want := `warning: "exec" is also declared in [aliases]; the builtin command runs`; !strings.Contains(stderr, want) {
-		t.Errorf("stderr = %q, want the shadowing warning %q", stderr, want)
+	if calls := fake.Calls(); len(calls) != 0 {
+		t.Errorf("a subcommand alias reached the backend:\n%s", harness.CallDump(calls))
 	}
-	var execCall *testsupport.Call
-	for _, c := range fake.Calls() {
-		if c.Args[0] == "exec" {
-			call := c
-			execCall = &call
-		}
-	}
-	if execCall == nil {
-		t.Fatalf("no exec call recorded:\n%s", harness.CallDump(fake.Calls()))
-	}
-	if n := strings.Count(stderr, "warning:"); n != 1 {
-		t.Errorf("shadowing warning printed %d times, want once:\n%s", n, stderr)
+}
+
+func TestConfigFreeCommandsIgnoreShadowAliases(t *testing.T) {
+	shadowed := harness.PersistentTOML + `
+[aliases]
+help = "exec -- wrong"
+version = "exec -- wrong"
+list = "exec -- wrong"
+exec = "run -- wrong"
+port = "exec -- wrong"
+`
+	for _, args := range [][]string{
+		{"help"}, {"--help"}, {"help", "exec"}, {"exec", "--help"},
+		{"version"}, {"--version"}, {"-V"}, {"list"},
+		{"port", "--help"}, {"port", "prune", "--help"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
+			code, want, stderr := harness.SbxRun(t, worktree, args, nil)
+			if code != 0 || stderr != "" || want == "" {
+				t.Fatalf("baseline: code=%d stdout=%q stderr=%q", code, want, stderr)
+			}
+			for _, config := range []string{shadowed, "no_such_field = true\n"} {
+				harness.WriteFile(t, filepath.Join(worktree, "sbx.toml"), config)
+				code, stdout, stderr := harness.SbxRun(t, worktree, args, nil)
+				if code != 0 || stdout != want || stderr != "" {
+					t.Errorf("config-free output changed: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+				}
+			}
+		})
 	}
 }
 
@@ -189,25 +280,43 @@ func TestUnknownCommandWithBrokenConfigReportsLoadError(t *testing.T) {
 	}
 }
 
-// TestAliasesNeverDrift checks the standing agreed for aliases: declaring
-// or editing them after creation is not Creation drift.
+func TestUnknownCommandOutsideWorktreeMatchesPlanError(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	outside := t.TempDir()
+	planCode, planOut, planErr := harness.SbxRun(t, outside, []string{"plan"}, nil)
+	code, stdout, stderr := harness.SbxRun(t, outside, []string{"frobnicate"}, nil)
+	if planCode != exitFailure || code != planCode || stdout != "" || planOut != "" || stderr != planErr {
+		t.Fatalf("unknown=(%d, %q, %q), plan=(%d, %q, %q)", code, stdout, stderr, planCode, planOut, planErr)
+	}
+	if !strings.HasPrefix(stderr, "sbx:") || strings.Contains(stderr, "unknown command") {
+		t.Errorf("expected a discovery error, got %q", stderr)
+	}
+}
+
 func TestAliasesNeverDrift(t *testing.T) {
 	worktree, _ := harness.PersistentFixture(t, harness.PersistentTOML)
 	if code, _, stderr := harness.SbxUp(t, worktree); code != 0 {
 		t.Fatalf("up failed: %s", stderr)
 	}
-
-	edited := harness.PersistentTOML + "\n[aliases]\nls = \"exec -- ls\"\n"
-	if err := os.WriteFile(filepath.Join(worktree, "sbx.toml"), []byte(edited), 0o644); err != nil {
-		t.Fatal(err)
+	baseline := map[string]string{}
+	for _, command := range []string{"status", "plan"} {
+		code, stdout, stderr := harness.SbxRun(t, worktree, []string{command, "--json"}, nil)
+		if code != 0 || stderr != "" {
+			t.Fatalf("%s baseline: code=%d stderr=%q", command, code, stderr)
+		}
+		baseline[command] = stdout
 	}
-
-	code, stdout, stderr := harness.SbxRun(t, worktree, []string{"status"}, nil)
-	if code != 0 {
-		t.Fatalf("status failed: %s", stderr)
-	}
-	if !strings.Contains(stdout, "drift: none") {
-		t.Errorf("adding aliases caused Creation drift:\n%s", stdout)
+	for _, aliases := range []string{
+		"ls = 'exec -- ls'\n",
+		"ls = 'run -- echo changed'\nll = 'ls'\n",
+	} {
+		harness.WriteFile(t, filepath.Join(worktree, "sbx.toml"), harness.PersistentTOML+"\n[aliases]\n"+aliases)
+		for _, command := range []string{"status", "plan"} {
+			code, stdout, stderr := harness.SbxRun(t, worktree, []string{command, "--json"}, nil)
+			if code != 0 || stderr != "" || stdout != baseline[command] {
+				t.Errorf("aliases changed %s identity, translation, or drift: code=%d stdout=%q stderr=%q", command, code, stdout, stderr)
+			}
+		}
 	}
 }
 

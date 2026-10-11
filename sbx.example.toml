@@ -142,7 +142,9 @@ printf "bootstrapped\n" > "$SBX_DATA_DIR/bootstrapped"
 # whitespace and dispatched as if typed, with any extra arguments
 # appended; it may expand through one other alias. Aliases never affect
 # the sandbox's identity or Creation drift. A builtin command always wins
-# over an alias of the same name, with a warning when the name is used.
+# over an alias of the same name. Commands that read project configuration
+# warn when shadowed; help, version, list, and per-command help skip the
+# warning so they stay configuration-free.
 
 # [aliases]
 # ls = "exec -- ls"

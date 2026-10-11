@@ -143,7 +143,7 @@ test = "exec -- ./scripts/test.sh"
 fresh_test = "run -- ./scripts/test.sh"
 ```
 
-`sbx test` expands the configured command and appends any additional arguments. Expansions split on whitespace: they are not shell syntax, and quotes or variable substitutions have no special meaning. Builtins always win over same-named aliases, with a warning. An alias may expand through one other alias; deeper chains and cycles fail. Aliases affect neither identity nor Creation drift.
+`sbx test` expands the configured command and appends any additional arguments. Expansions split on whitespace: they are not shell syntax, and quotes or variable substitutions have no special meaning. Builtins always win over same-named aliases. Commands that read project configuration warn once when shadowed; help, version, list, and per-command help skip shadow warnings so they stay configuration-free. An alias may expand through one other alias; deeper chains and cycles fail. Aliases affect neither identity nor Creation drift.
 
 Global flags inside an expansion work as if typed. Trailing arguments are interpreted after expansion: with `ls = "exec -- ls"`, `sbx ls --plain` passes `--plain` to the guest, while `sbx --plain ls` selects Plain output for sbx.
 

@@ -1,6 +1,6 @@
 # Aliases: project-configured shorthands for sbx commands
 
-Status: ready-for-agent
+Status: resolved
 
 ## Goal
 
@@ -22,33 +22,20 @@ decision listed here is agreed.
 
 ### Resolution semantics
 
-- Only the first word of an invocation is an alias candidate: `sbx ls -la`
-  expands; `sbx port <anything>` never consults `[aliases]`.
+- Only the first word of an invocation is an alias candidate: `sbx ls -la` expands; a subcommand such as `sbx port ls` never resolves `ls` as an alias.
 - An alias's value is a full sbx command line, split on whitespace and
   re-dispatched through the same internal entry point `Run` uses, with any
   trailing arguments from the original invocation appended. No host shell is
   involved, so there are no quoting or expansion surprises.
-- Re-dispatch is silent: alias output is indistinguishable from typing the
-  expanded command.
-- An expansion may resolve through one further alias (`ll = "ls"` works when
-  `ls` is itself an alias). An internal depth counter enforces the cap:
-  depth ≥ 2 is a usage error ("alias chain too deep"), which also makes
-  `a = "a"` impossible to loop.
-- Builtins always win. If `[aliases]` declares `exec` and the user types
-  `sbx exec …`, the builtin runs and sbx prints one styled warning line on
-  stderr — only when the shadowed name is actually invoked, never on other
-  commands. The warning goes through the styled stderr writer, so Plain
-  output keeps its `sbx:` prefix convention.
+- Re-dispatch adds no output of its own. Builtin names supplied by an expansion never trigger shadow warnings; only a builtin name the user typed can warn.
+- An expansion may resolve through one further alias (`ll = "ls"` works when `ls` is itself an alias). A third alias candidate, at depth ≥ 2, is a usage error ("alias chain too deep"), which also makes `a = "a"` impossible to loop.
+- Builtins always win. If `[aliases]` declares `exec` and the user types `sbx exec …`, the builtin runs and sbx prints one styled `warning:` line on stderr — only when that name is invoked, never on other commands. The warning uses the styled stderr writer, so Plain output retains the same words without ANSI.
+- Configuration-free invocations — help, version, list, and per-command help — skip shadow warnings rather than loading configuration just to warn. `list`’s exception follows [ADR-0008](../../docs/adrs/0008-backend-global-list.md).
 
 ### Names
 
-- Load-time rejection only for names that can never be invoked: empty names,
-  names containing whitespace, and names starting with `-` (indistinguishable
-  from flags in use).
-- A name that shadows a builtin or a top-level flag word (`help`, `version`)
-  is *permitted* in configuration — a config file mistake must not poison
-  every command for the worktree, and aliases are not creation-time settings.
-  The runtime builtin-wins warning above covers it.
+- Load-time rejection only for names that can never be invoked: empty names, names containing whitespace, and names starting with `-` (indistinguishable from flags in use).
+- A name that shadows a builtin or a top-level flag word (`help`, `version`) is *permitted* in configuration — a config file mistake must not poison every command for the worktree, and aliases are not creation-time settings. Commands that read configuration apply the runtime builtin-wins warning above; configuration-free invocations keep their exception.
 
 ### Relationship to sandbox machinery
 
@@ -60,18 +47,11 @@ decision listed here is agreed.
 
 ### Config loading on unknown commands
 
-- Today an unknown first word falls to the dispatcher's `default:` branch
-  without reading `sbx.toml`, because no command ever needed it. With aliases,
-  the `default:` branch loads configuration through the same `discoverConfig`
-  path every other command uses:
-  - discovery or load failure reports that error — the same behavior as
-    `sbx plan` in the same directory, and more informative than today's
-    "unknown command" alone;
-  - a valid table that does not contain the word produces today's unchanged
-    "unknown command" error;
+- An unknown first word falls to the dispatcher’s `default:` branch, which loads configuration through the same `discoverConfig` path used by project-scoped commands:
+  - discovery or load failure reports that error — the same behavior as `sbx plan` in the same directory, and more informative than "unknown command" alone;
+  - a valid table that does not contain the word produces the unchanged "unknown command" error;
   - a hit re-dispatches.
-- `sbx help` and `sbx --version` stay config-free: they are handled before the
-  dispatch switch.
+- `sbx help`, version invocations, `sbx list`, and per-command help stay configuration-free.
 
 ### Configuration surface
 
@@ -84,7 +64,7 @@ decision listed here is agreed.
 - `sbx.example.toml` gains a commented `[aliases]` block documenting the
   feature, in the file's established style.
 - The top-level help does not list aliases: they are per-project, and
-  `testdata/help.txt` pins the help byte-for-byte.
+  `testdata/help.golden` pins the help byte-for-byte.
 
 ## Acceptance
 
@@ -92,7 +72,7 @@ decision listed here is agreed.
   `sbx exec -- ls`, with identical exit code, stdout, and stderr bytes as
   typing the expansion directly.
 - Trailing arguments append: `sbx ls -la` ≡ `sbx exec -- ls -la`.
-- A shadowing alias warns once on stderr when invoked, and the builtin runs.
+- A shadowing alias warns once on stderr when a configuration-reading builtin is invoked, and the builtin runs. Configuration-free invocations keep their normal bytes and do not warn, even with shadowing aliases or broken project configuration.
 - `a = "a"` (or any chain deeper than one alias hop) fails with a usage error,
   not a hang.
 - A worktree with an invalid `sbx.toml` reports the config error for an
@@ -101,6 +81,25 @@ decision listed here is agreed.
   or `sbx plan`, and never change the Sandbox identity.
 - Strict parsing accepts `[aliases]` and rejects non-string values, empty
   values, and uninvocable names with a clear load error.
-- Plain output through a pipe or under `NO_COLOR` stays byte-identical to
-  today's output for every non-alias invocation, and the new warning line
-  follows the `sbx:` stderr convention.
+- Plain output through a pipe or under `NO_COLOR` stays byte-identical for non-alias invocations without shadow warnings. A shadow warning uses the existing `warning:` prefix and preserves its words across Styled and Plain output.
+
+## Comments
+
+The implementation landed in `77f7a10`; the tracker status had not been updated. Checked the current implementation against acceptance and added regression coverage where the original tests were narrower than the spec. No runtime changes were required.
+
+Reconciled two spec inconsistencies rather than changing established behavior: shadow warnings use the existing `warning:` prefix, not the `sbx:` error prefix; configuration-free help, version, list, and per-command help cannot discover shadowing aliases without giving up their configuration-free contract. The original design already required help/version to stay configuration-free, and ADR-0008 requires the same for list. The spec, README, and example configuration now state those exceptions explicitly. Also clarified that only the first word is an alias candidate and that the depth cap rejects a third alias candidate, not the builtin reached after two expansions.
+
+Acceptance evidence lives in [CLI alias tests](../../internal/cli/aliases_test.go), [guest argument tests](../../internal/cli/global_flags_test.go), [configuration tests](../../internal/config/config_test.go), and the existing Plain output goldens:
+
+| Acceptance area | Evidence |
+| --- | --- |
+| Direct invocation equivalence, including nonzero guest exit status | `TestAliasMatchesDirectInvocation` compares exit code and both streams for bare, trailing-argument, and one-hop invocations. |
+| Exact guest argv and first-word-only resolution | `TestAliasDispatchesAsIfTyped`, `TestAliasThroughOneAlias`, `TestGlobalFlagsPreserveGuestArguments`, and `TestAliasesOnlyResolveFirstWord`. |
+| Builtin wins, warns once, and does not warn on unrelated commands | `TestShadowedAliasWarnsAndBuiltinWins` covers pipe, `NO_COLOR`, `--plain`, and forced styling; `TestConfigFreeCommandsIgnoreShadowAliases` pins the configuration-free exceptions. |
+| Bounded chains and cycles | `TestAliasChainTooDeep` covers self-reference, a two-alias cycle, and three aliases, all rejected before backend calls. |
+| Configuration and discovery failures on unknown commands | `TestUnknownCommandWithBrokenConfigReportsLoadError`, `TestUnknownCommandOutsideWorktreeMatchesPlanError`, and `TestUnknownCommandWithoutAliasUnchanged`. |
+| No identity, translation, or Creation drift changes | `TestAliasesNeverDrift` compares complete status and plan JSON reports before adding aliases and after editing them. |
+| Strict configuration validation | `TestLoadAliases` also accepts builtin-shadowing names; the existing rejection tests cover uninvocable names, empty values, and non-string values. |
+| Plain output stability | Existing Plain goldens pass unchanged; shadow warning bytes match exactly across pipe, `NO_COLOR`, and `--plain` cases. |
+
+Validation passed: targeted alias/configuration/output tests, `go test -race ./... -count=1`, `go build ./...`, `go vet ./...`, formatting, `go mod tidy -diff`, and `git diff --check`. This was an automated acceptance check using fake backend executables; no real-backend smoke test was run.
