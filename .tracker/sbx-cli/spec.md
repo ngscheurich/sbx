@@ -244,7 +244,7 @@ The fixture also contains `index.html` with `sbx fixture\n`. The `data` and `art
 
 `exec` and `run` forward input, output, and signals, and exit with the guest command's status. They pass argv to the guest directly, never through a host shell, and match each mode's native msb command behavior: `msb run` replaces the image CMD while preserving its effective entrypoint, and `msb exec` runs argv as given. Bootstrap runs through `<shell> -c` in the Workspace.
 
-**Command names to revisit.** `exec` and `run` differ only in which sandbox they use, yet read as synonyms. Rename them before v1 so each name conveys its mode; this spec uses the current names until then.
+**Command names.** Keep `exec` and `run`, following msb’s precedent. `exec` uses the persistent sandbox and leaves it running; `run` starts a disposable run. The familiar backend names outweigh inventing a new pair, so no rename is planned for v1.
 
 ### Backend and ownership
 

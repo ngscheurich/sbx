@@ -2,7 +2,7 @@
 
 Worktree-scoped local development sandboxes. Each Git worktree gets its own persistent sandbox, and can also start disposable runs from the same `sbx.toml`. sbx drives the local [microsandbox](https://microsandbox.dev/) CLI (`msb`); projects describe their environment, not backend commands.
 
-sbx targets macOS and Linux. Windows, cloud backends, automatic image builds, stack detection, and guest task orchestration are out of scope. The command names `exec` and `run` are provisional and will be revisited before v1.
+sbx targets macOS and Linux. Windows, cloud backends, automatic image builds, stack detection, and guest task orchestration are out of scope. The command names follow msb’s precedent: use `exec` for the persistent sandbox and `run` for a disposable run.
 
 ## Install from source
 
