@@ -1,6 +1,6 @@
 # Implement `sbx list`
 
-Status: ready-for-agent
+Status: resolved
 
 Type: task
 
