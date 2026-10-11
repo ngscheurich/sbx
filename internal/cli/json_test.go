@@ -28,7 +28,7 @@ func TestJSONListGolden(t *testing.T) {
 	fake.SeedSandbox(t, "proj-b", "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
 	fake.SeedSandbox(t, "proj-a", "debian:12", "stopped", map[string]string{"sbx.managed": "1"})
 	fake.SeedSandbox(t, "unowned", "alpine:3.20", "running", nil)
-	for _, args := range [][]string{{"list", "--json"}, {"--plain", "list", "--json"}} {
+	for _, args := range [][]string{{"list", "--json"}, {"--plain", "list", "--json"}, {"list", "--plain", "--json"}, {"list", "--json", "--no-color"}} {
 		var stdout, stderr bytes.Buffer
 		if code := cli.Run(t.Context(), args, nil, &stdout, &stderr); code != 0 {
 			t.Fatalf("%v: code %d: %s", args, code, &stderr)
@@ -49,14 +49,29 @@ func TestJSONListEmptyGolden(t *testing.T) {
 func TestJSONVersionGolden(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run(t.Context(), []string{"version", "--json"}, nil, &stdout, &stderr); code != 0 {
-		t.Fatalf("code %d: %s", code, &stderr)
+	for _, args := range [][]string{
+		{"version", "--json"},
+		{"version", "--plain", "--json"},
+		{"-V", "--json", "--no-color"},
+		{"--version", "-p", "--json"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := cli.Run(t.Context(), args, nil, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v: code %d: %s", args, code, &stderr)
+		}
+		jsonGolden(t, "version-json", stdout.String())
 	}
-	jsonGolden(t, "version-json", stdout.String())
 }
 
 func TestJSONRejectedCommands(t *testing.T) {
-	for _, args := range [][]string{{"run", "--json"}, {"exec", "--json"}, {"logs", "--json"}, {"help", "--json"}, {"help", "up", "--json"}, {"--help", "--json"}, {"--json", "list"}, {"list", "--plain", "--json"}} {
+	for _, args := range [][]string{
+		{"run", "--json"}, {"exec", "--json"}, {"logs", "--json"},
+		{"help", "--json"}, {"help", "up", "--json"}, {"--help", "--json"}, {"--json", "list"},
+		{"run", "--plain", "--json"}, {"exec", "--json", "--no-color"}, {"logs", "-p", "--json"},
+		{"help", "--plain", "--json"}, {"help", "up", "--json", "--plain"}, {"--help", "--json", "-p"},
+		{"--plain", "--json", "list"}, {"--json", "list", "--plain"},
+	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			if code := cli.Run(t.Context(), args, nil, &stdout, &stderr); code != 2 {
@@ -335,7 +350,7 @@ func TestJSONWriteFailure(t *testing.T) {
 func TestJSONIgnoresStyling(t *testing.T) {
 	testsupport.FakeMSB(t)
 	t.Setenv("CLICOLOR_FORCE", "1")
-	for _, args := range [][]string{{"list", "--json"}, {"--plain", "list", "--json"}, {"version", "--json"}} {
+	for _, args := range [][]string{{"list", "--json"}, {"--plain", "list", "--json"}, {"list", "--json", "-p"}, {"version", "--json"}} {
 		var stdout, stderr bytes.Buffer
 		if code := cli.Run(t.Context(), args, nil, &stdout, &stderr); code != 0 || !json.Valid(stdout.Bytes()) || bytes.ContainsRune(stdout.Bytes(), '\x1b') {
 			t.Fatalf("%v: code=%d stdout=%q stderr=%q", args, code, &stdout, &stderr)

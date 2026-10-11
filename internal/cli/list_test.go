@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -49,52 +48,29 @@ func TestPlainListEmptyGolden(t *testing.T) {
 	testsupport.Golden(t, "testdata/list-empty.golden", out)
 }
 
-// TestPlainListPlainGolden pins the plain lever end to end: `sbx --plain
-// list` keeps every word, drops the border glyphs, and strips the forced
-// color too.
-func TestPlainListPlainGolden(t *testing.T) {
+func TestPlainListFlagPositionsGolden(t *testing.T) {
 	t.Setenv("TZ", "UTC")
 	t.Setenv("CLICOLOR_FORCE", "1")
+	t.Setenv("NO_COLOR", "")
 	fake := testsupport.FakeMSB(t)
 	fake.SeedSandbox(t, "proj-b-feat-x-ab12cd", "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
-	var stdout, stderr bytes.Buffer
-	if code := Run(context.Background(), []string{"--plain", "list"}, nil, &stdout, &stderr); code != 0 {
-		t.Fatalf("exit code = %d (stderr: %s)", code, stderr.String())
+	cases := [][]string{
+		{"--plain", "list"},
+		{"--no-color", "list"},
+		{"-p", "list"},
+		{"list", "--plain"},
+		{"list", "--no-color"},
+		{"list", "-p"},
+		{"--plain", "-p", "list", "--no-color", "--plain"},
 	}
-	out := stdout.String()
-	if strings.ContainsAny(out, "┌┬┐│├┼┤└┴┘─┏┳┓┃┣╋┫┗┻┛━") || strings.Contains(out, "\x1b[") {
-		t.Errorf("--plain list kept decoration:\n%q", out)
-	}
-	testsupport.Golden(t, "testdata/list-plain.golden", stdout.Bytes())
-}
-
-// TestPlainListAlias pins the documented alias and the short form:
-// --no-color and -p are the same lever as --plain, byte-for-byte.
-func TestPlainListAlias(t *testing.T) {
-	t.Setenv("TZ", "UTC")
-	t.Setenv("CLICOLOR_FORCE", "1")
-	fake := testsupport.FakeMSB(t)
-	fake.SeedSandbox(t, "proj-b-feat-x-ab12cd", "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
-	want, err := os.ReadFile("testdata/list-plain.golden")
-	for _, flag := range []string{"--no-color", "-p"} {
-		var stdout, stderr bytes.Buffer
-		if code := Run(context.Background(), []string{flag, "list"}, nil, &stdout, &stderr); code != 0 {
-			t.Fatalf("%s: exit code = %d (stderr: %s)", flag, code, stderr.String())
-		}
-		if err != nil || !bytes.Equal(stdout.Bytes(), want) {
-			t.Errorf("%s output differs from --plain (err: %v)\ngot:\n%swant:\n%s", flag, err, stdout.String(), want)
-		}
-	}
-}
-
-// A --plain token after the command name belongs to that command, which
-// rejects it: the global lever leads the command line.
-func TestPlainAfterCommandIsRejected(t *testing.T) {
-	fake := testsupport.FakeMSB(t)
-	_ = fake
-	var stdout, stderr bytes.Buffer
-	if code := Run(context.Background(), []string{"list", "--plain"}, nil, &stdout, &stderr); code != exitUsage {
-		t.Fatalf("exit code = %d, want %d", code, exitUsage)
+	for _, args := range cases {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := Run(t.Context(), args, nil, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+				t.Fatalf("code=%d stderr=%q", code, &stderr)
+			}
+			testsupport.Golden(t, "testdata/list-plain.golden", stdout.Bytes())
+		})
 	}
 }
 

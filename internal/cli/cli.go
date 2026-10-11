@@ -179,27 +179,34 @@ func renderPortHelp(st ui.Styles) string {
 // stdin is passed through to guest commands. An unknown first word may be a
 // project alias; see dispatch for how deep that resolution may go.
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	// --plain (alias --no-color) is a global flag and leads the command
-	// line, before the command name; a token after the command belongs to
-	// that command, and past exec's `--` separator even `--plain` is a
-	// guest argument, so it is never stripped there. It is stripped once,
-	// here at depth zero: an alias expansion re-enters dispatch past this
-	// point, so `--plain` inside an expansion belongs to the command the
-	// expansion names.
+	args, plain := parseGlobalFlags(args)
+	return dispatch(ctx, args, stdin, newOutput(stdout, stderr, plain), 0)
+}
+
+func parseGlobalFlags(args []string) ([]string, bool) {
 	plain := false
-loop:
-	for len(args) > 0 {
-		switch args[0] {
+	filtered := make([]string, 0, len(args))
+	for i, arg := range args {
+		switch arg {
 		case "-p", "--plain", "--no-color":
 			plain = true
-			args = args[1:]
+		case "--":
+			return append(filtered, args[i:]...), plain
 		default:
-			// The first token that is not the plain lever starts the
-			// command, whose own parser owns the rest.
-			break loop
+			filtered = append(filtered, arg)
+			if len(filtered) == 1 {
+				switch arg {
+				case "help", "-h", "--help", "version", "-V", "--version":
+				default:
+					if !builtinCommand(arg) {
+						// Alias expansion may put the remaining arguments after --.
+						return append(filtered, args[i+1:]...), plain
+					}
+				}
+			}
 		}
 	}
-	return dispatch(ctx, args, stdin, newOutput(stdout, stderr, plain), 0)
+	return filtered, plain
 }
 
 // dispatch is Run's re-entrant body. depth counts alias expansions: zero is
@@ -347,6 +354,11 @@ func dispatchUnknown(ctx context.Context, cmd string, args []string, stdin io.Re
 		return exitUsage
 	}
 	expanded := append(strings.Fields(expansion), args[1:]...)
+	expanded, plain := parseGlobalFlags(expanded)
+	if plain && !out.plain {
+		out.stdout, out.stderr, out.styles = ui.Writers(out.rawOut, out.rawErr, true)
+		out.plain = true
+	}
 	return dispatch(ctx, expanded, stdin, out, depth+1)
 }
 

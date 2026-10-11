@@ -62,7 +62,9 @@ For projects with `[build]`, run `sbx build` explicitly before `up`, `exec`, or 
 
 Commands listed in top-level help support `-h`/`--help` and `sbx help <command>` for their flags and safety details, including `sbx help port prune`. Help works without project configuration or a backend and exits successfully without changing anything. Help flags after `exec` or `run`’s `--` separator belong to the guest command.
 
-`--plain` (`-p`, alias `--no-color`) is a global accessibility flag **before the command**: `sbx --plain status`. It drops color, emphasis, and table borders. `NO_COLOR` drops ANSI styling; use `--plain` to drop all decoration. Guest stdio is untouched.
+`--plain` (`-p`, alias `--no-color`) is a global accessibility flag accepted **before or after the command**: `sbx --plain status` and `sbx status --plain` are equivalent. It also works between nested command names: `sbx port --plain prune`. It drops color, emphasis, and table borders. `NO_COLOR` drops ANSI styling; use `--plain` to drop all decoration. Guest stdio is untouched.
+
+Global flag parsing stops at `--`: `sbx exec --plain -- tool` selects Plain output for sbx, while `sbx exec -- tool --plain` passes the flag to the guest. The same boundary applies to `run`.
 
 `--json` is per command, not global. Supported commands emit one JSON value on stdout; build/check progress goes to stderr, and errors never appear on stdout. It is not supported by help, `exec`, `run`, or `logs`. Empty collections are arrays, not human messages.
 
@@ -142,6 +144,8 @@ fresh_test = "run -- ./scripts/test.sh"
 ```
 
 `sbx test` expands the configured command and appends any additional arguments. Expansions split on whitespace: they are not shell syntax, and quotes or variable substitutions have no special meaning. Builtins always win over same-named aliases, with a warning. An alias may expand through one other alias; deeper chains and cycles fail. Aliases affect neither identity nor Creation drift.
+
+Global flags inside an expansion work as if typed. Trailing arguments are interpreted after expansion: with `ls = "exec -- ls"`, `sbx ls --plain` passes `--plain` to the guest, while `sbx --plain ls` selects Plain output for sbx.
 
 ## Verification
 

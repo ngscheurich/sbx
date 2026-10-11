@@ -64,6 +64,9 @@ func TestCommandHelpHonorsOutputMode(t *testing.T) {
 	}{
 		{name: "styled", args: []string{"up", "--help"}, styled: true},
 		{name: "plain", args: []string{"--plain", "help", "up"}},
+		{name: "plain after help topic", args: []string{"help", "up", "--plain"}},
+		{name: "plain before help topic", args: []string{"help", "--no-color", "up"}},
+		{name: "plain after help flag", args: []string{"up", "--help", "-p"}},
 		{name: "no color", args: []string{"up", "-h"}, noColor: "1"},
 	}
 	for _, tc := range cases {
@@ -138,6 +141,8 @@ func TestPortCommandHelp(t *testing.T) {
 		{args: []string{"help", "port"}, want: []string{"sbx port <subcommand>", "Subcommands:", "-h, --help"}},
 		{args: []string{"port", "prune", "-h"}, want: []string{"sbx port prune [--json]", "stopped", "backend", "changing nothing", "-h, --help"}},
 		{args: []string{"port", "prune", "--help"}, want: []string{"sbx port prune [--json]", "stopped", "backend", "changing nothing", "-h, --help"}},
+		{args: []string{"port", "--plain", "prune", "--help"}, want: []string{"sbx port prune [--json]", "changing nothing"}},
+		{args: []string{"port", "prune", "--help", "--no-color"}, want: []string{"sbx port prune [--json]", "changing nothing"}},
 		{args: []string{"help", "port", "prune"}, want: []string{"sbx port prune [--json]", "stopped", "backend", "changing nothing", "-h, --help"}},
 	}
 	for _, tc := range cases {

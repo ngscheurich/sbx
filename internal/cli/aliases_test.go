@@ -84,6 +84,37 @@ func TestAliasThroughOneAlias(t *testing.T) {
 	}
 }
 
+func TestAliasesHonorGlobalFlagPositions(t *testing.T) {
+	goldenPath, err := filepath.Abs("testdata/list-plain.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLICOLOR_FORCE", "1")
+	t.Setenv("NO_COLOR", "")
+	config := harness.PersistentTOML + `
+[aliases]
+listing = "list"
+plain = "--plain listing"
+tail = "list --no-color"
+`
+	for _, args := range [][]string{
+		{"listing", "--plain"},
+		{"--no-color", "listing", "-p"},
+		{"plain"},
+		{"tail"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			worktree, fake := harness.PersistentFixture(t, config)
+			fake.SeedSandbox(t, "proj-b-feat-x-ab12cd", "alpine:3.20", "running", map[string]string{"sbx.managed": "1"})
+			code, stdout, stderr := harness.SbxRun(t, worktree, args, nil)
+			if code != 0 || stderr != "" {
+				t.Fatalf("code=%d stderr=%q", code, stderr)
+			}
+			testsupport.Golden(t, goldenPath, []byte(stdout))
+		})
+	}
+}
+
 // TestAliasChainTooDeep checks that a self-referential alias fails fast
 // with a usage error instead of recursing forever.
 func TestAliasChainTooDeep(t *testing.T) {
