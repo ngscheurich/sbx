@@ -1,6 +1,6 @@
 # Per-command help as the home for detail
 
-Status: ready-for-agent
+Status: resolved
 
 ## Goal
 
@@ -26,3 +26,9 @@ group help; follow the same shape for the other commands.
 - Unknown flags on a command point at its per-command help rather than only
   erroring.
 - The top-level help stays one line per command; detail never leaks back in.
+
+## Comments
+
+Implemented per-command help through `sbx help <command>`, `-h`, and `--help`, including the port group and `port prune`. Help runs before project/backend discovery, documents flags and safety promises, and preserves guest arguments after `--`. Unknown-flag errors link to command help; the top-level help golden is unchanged.
+
+Tests exercise the agreed `cli.Run` seam. Validation passed: targeted CLI tests, `go build ./...`, `go test -race ./... -count=1`, `go vet ./...`, formatting, and `go mod tidy -diff`. Standards and Spec reviews reported no actionable findings.

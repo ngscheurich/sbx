@@ -159,9 +159,6 @@ func renderHelp(st ui.Styles) string {
 	return b.String()
 }
 
-// renderPortHelp renders the port command group's help the same way.
-// Plain output is byte-identical to the pre-styling text, pinned by
-// testdata/port-help.txt.
 func renderPortHelp(st ui.Styles) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, "sbx port — manage sandbox ports")
@@ -171,6 +168,9 @@ func renderPortHelp(st ui.Styles) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "%s\n", st.Heading.Render("Subcommands:"))
 	fmt.Fprintf(&b, "  %s%s  %s\n", st.Command.Render("prune"), " ", "Remove port reservations for sandboxes that no longer exist")
+	fmt.Fprintln(&b, "\nRun “sbx help port prune” for flags and retention rules.")
+	fmt.Fprintf(&b, "\n%s\n", st.Heading.Render("Flags:"))
+	fmt.Fprintf(&b, "  %s  Show this help and exit\n", st.Command.Render("-h, --help"))
 	return b.String()
 }
 
@@ -212,6 +212,17 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 		return exitOK
 	}
 	cmd := args[0]
+	// Help precedes configuration discovery so it works without a project or backend.
+	if hasHelpFlag(args[1:]) {
+		helpName := cmd
+		if cmd == "port" && len(args) > 1 && args[1] == "prune" {
+			helpName = "port prune"
+		}
+		if text, ok := renderCommandHelp(helpName, out.styles); ok {
+			fmt.Fprint(out.stdout, text)
+			return exitOK
+		}
+	}
 	// A builtin command always wins over an alias of the same name, and
 	// says so once, on the invocation the user typed. help and version
 	// stay config-free, so they take no part in the check — and neither
@@ -223,7 +234,9 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 	switch cmd {
 	case "--json":
 		return out.usagef("--json is a per-command flag; use “sbx <command> --json”")
-	case "-h", "--help", "help":
+	case "help":
+		return runHelp(args[1:], out)
+	case "-h", "--help":
 		if slices.Contains(args[1:], "--json") {
 			return out.usagef("help does not support --json")
 		}
@@ -265,7 +278,7 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, out *output, 
 			return exitOK
 		}
 		if args[1] != "prune" {
-			return out.usagef("unknown port command %q; run “sbx port” for usage", args[1])
+			return out.usagef("unknown port command %q; run “sbx help port” for usage", args[1])
 		}
 		return runPortPrune(ctx, args, out)
 	case "-V", "--version", "version":

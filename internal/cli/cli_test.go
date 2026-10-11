@@ -79,7 +79,7 @@ func TestPortUnknownSubcommandFails(t *testing.T) {
 	if code := cli.Run(context.Background(), []string{"port", "list"}, nil, &stdout, &stderr); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	for _, want := range []string{"list", "sbx port"} {
+	for _, want := range []string{"list", "sbx help port"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("stderr does not mention %q:\n%s", want, stderr.String())
 		}

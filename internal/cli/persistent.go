@@ -842,10 +842,11 @@ func parsePersistentFlags(cmd string, args []string, allowed []string) (map[stri
 		case allowedSet[a]:
 			present[a] = true
 		default:
-			if len(allowed) == 0 {
-				return nil, fmt.Errorf("%s takes no arguments or flags, got %q", cmd, a)
+			requirement := "no arguments or flags"
+			if len(allowed) > 0 {
+				requirement = "only " + strings.Join(allowed, " ")
 			}
-			return nil, fmt.Errorf("%s takes only %s, got %q", cmd, strings.Join(allowed, " "), a)
+			return nil, fmt.Errorf("%s takes %s, got %q; run “sbx help %s” for usage", cmd, requirement, a, cmd)
 		}
 	}
 	return present, nil
@@ -861,7 +862,7 @@ func parseExecArgs(args []string) (allowStale bool, argv []string, err error) {
 		case "--":
 			return allowStale, args[i+1:], nil
 		default:
-			return false, nil, fmt.Errorf("exec takes an optional %q separator before the guest command, got %q", "--", a)
+			return false, nil, fmt.Errorf("exec takes an optional %q separator before the guest command, got %q; run “sbx help exec” for usage", "--", a)
 		}
 	}
 	return allowStale, nil, nil

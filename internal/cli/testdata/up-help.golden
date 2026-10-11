@@ -1,0 +1,14 @@
+sbx up — Create or start this worktree’s persistent sandbox
+
+Usage:
+  sbx up [--allow-stale] [--retry-bootstrap] [--json]
+
+Requires a Git worktree with sbx.toml. Reuses an owned sandbox; never recreates it
+or adopts an unowned one. Refuses Creation drift unless explicitly allowed.
+Bootstrap runs after creation; incomplete initialization fails up and is not retried automatically.
+
+Flags:
+  --allow-stale      Allow Creation drift without recreating; does not bypass Image checks
+  --retry-bootstrap  Explicitly rerun Bootstrap, including incomplete initialization
+  --json             Write the result as JSON; check/Bootstrap progress goes to stderr
+  -h, --help         Show this help and exit

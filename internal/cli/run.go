@@ -34,7 +34,7 @@ func runDisposable(ctx context.Context, args []string, stdin io.Reader, out *out
 	case args[1] == "--":
 		argv = args[2:]
 	default:
-		return out.usagef("run takes an optional %q separator before the guest command, got %q", "--", strings.Join(args[1:], " "))
+		return out.usagef("run takes an optional %q separator before the guest command, got %q; run “sbx help run” for usage", "--", strings.Join(args[1:], " "))
 	}
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

@@ -56,7 +56,7 @@ func TestJSONVersionGolden(t *testing.T) {
 }
 
 func TestJSONRejectedCommands(t *testing.T) {
-	for _, args := range [][]string{{"run", "--json"}, {"exec", "--json"}, {"logs", "--json"}, {"help", "--json"}, {"--help", "--json"}, {"--json", "list"}, {"list", "--plain", "--json"}} {
+	for _, args := range [][]string{{"run", "--json"}, {"exec", "--json"}, {"logs", "--json"}, {"help", "--json"}, {"help", "up", "--json"}, {"--help", "--json"}, {"--json", "list"}, {"list", "--plain", "--json"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			if code := cli.Run(t.Context(), args, nil, &stdout, &stderr); code != 2 {
@@ -93,7 +93,7 @@ func TestJSONUpRetryAndDriftGolden(t *testing.T) {
 
 func TestHelpAndVersionKeepNonJSONBehavior(t *testing.T) {
 	t.Parallel()
-	for _, args := range [][]string{{"help", "extra"}, {"--help", "extra"}, {"version", "extra"}} {
+	for _, args := range [][]string{{"help"}, {"--help", "extra"}, {"version", "extra"}} {
 		var stdout, stderr bytes.Buffer
 		if code := cli.Run(t.Context(), args, nil, &stdout, &stderr); code != 0 || stdout.Len() == 0 || stderr.Len() != 0 {
 			t.Fatalf("%v: code=%d stdout=%q stderr=%q", args, code, &stdout, &stderr)

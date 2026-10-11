@@ -1,11 +1,6 @@
 package cli_test
 
-// Plain-output goldens: what a pipe or NO_COLOR receives is byte-identical
-// to sbx's pre-styling output, pinned per surface — help, port help, one
-// representative error line, and the status report. The goldens were
-// captured from the pre-styling code; the writer seam keeps them true by
-// construction. -update rewrites them, safely too: the goldens are always
-// captured through the seam, so they can hold only plain bytes.
+// Plain-output goldens pin sbx-authored bytes after the writer seam strips styling.
 
 import (
 	"bytes"
@@ -25,6 +20,15 @@ func TestPlainHelpGolden(t *testing.T) {
 		t.Fatalf("exit code = %d", code)
 	}
 	testsupport.Golden(t, "testdata/help.golden", stdout.Bytes())
+}
+
+func TestPlainCommandHelpGolden(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	if code := cli.Run(t.Context(), []string{"--plain", "help", "up"}, nil, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("code=%d stderr=%q", code, &stderr)
+	}
+	testsupport.Golden(t, "testdata/up-help.golden", stdout.Bytes())
 }
 
 func TestPlainPortHelpGolden(t *testing.T) {

@@ -1,1 +1,1 @@
-sbx: plan takes only --json, got "--verbose"
+sbx: plan takes only --json, got "--verbose"; run “sbx help plan” for usage

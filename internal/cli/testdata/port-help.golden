@@ -5,3 +5,8 @@ Usage:
 
 Subcommands:
   prune   Remove port reservations for sandboxes that no longer exist
+
+Run “sbx help port prune” for flags and retention rules.
+
+Flags:
+  -h, --help  Show this help and exit

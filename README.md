@@ -60,6 +60,8 @@ For projects with `[build]`, run `sbx build` explicitly before `up`, `exec`, or 
 | `sbx rm [--yes] [--json]` | Remove the persistent sandbox and report its lost Sandbox volumes. Interactive use asks for confirmation; scripts must pass `--yes`. |
 | `sbx port prune [--json]` | Release reservations for sandboxes that no longer exist. Keeps reservations for stopped sandboxes; fails safely if the backend cannot be inspected. |
 
+Commands listed in top-level help support `-h`/`--help` and `sbx help <command>` for their flags and safety details, including `sbx help port prune`. Help works without project configuration or a backend and exits successfully without changing anything. Help flags after `exec` or `run`’s `--` separator belong to the guest command.
+
 `--plain` (`-p`, alias `--no-color`) is a global accessibility flag **before the command**: `sbx --plain status`. It drops color, emphasis, and table borders. `NO_COLOR` drops ANSI styling; use `--plain` to drop all decoration. Guest stdio is untouched.
 
 `--json` is per command, not global. Supported commands emit one JSON value on stdout; build/check progress goes to stderr, and errors never appear on stdout. It is not supported by help, `exec`, `run`, or `logs`. Empty collections are arrays, not human messages.
