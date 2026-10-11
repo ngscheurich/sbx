@@ -1,6 +1,9 @@
 package identity
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestProjectBasename(t *testing.T) {
 	tests := []struct {
@@ -87,6 +90,70 @@ func TestDerive(t *testing.T) {
 	}
 	if len(got.Hash) != 8 {
 		t.Errorf("Hash length = %d, want 8", len(got.Hash))
+	}
+}
+
+func TestDeriveBackendSafeSandboxNames(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		commonDir    string
+		worktreeRoot string
+		wantPrefix   string
+	}{
+		{
+			name: "hidden project", commonDir: "/Users/nick/.pi-sandbox/.git",
+			worktreeRoot: "/Users/nick/.pi-sandbox", wantPrefix: "sbx-pi-sandbox--pi-sandbox-",
+		},
+		{
+			name: "leading hyphen", commonDir: "/src/-app/.git",
+			worktreeRoot: "/src/-app/main", wantPrefix: "sbx-app-main-",
+		},
+		{
+			name: "leading underscore", commonDir: "/src/_app/.git",
+			worktreeRoot: "/src/_app/main", wantPrefix: "sbx-app-main-",
+		},
+		{
+			name: "leading non-ASCII", commonDir: "/src/éapp/.git",
+			worktreeRoot: "/src/éapp/main", wantPrefix: "sbx-app-main-",
+		},
+		{
+			name: "punctuation only", commonDir: "/src/.../.git",
+			worktreeRoot: "/src/.../main", wantPrefix: "sbx----main-",
+		},
+		{
+			name: "empty project component", commonDir: "/src/.git/.git",
+			worktreeRoot: "/src/.git/main", wantPrefix: "sbx-main-",
+		},
+		{
+			name: "valid project", commonDir: "/src/app/.git",
+			worktreeRoot: "/src/app/main", wantPrefix: "app-main-",
+		},
+		{
+			name: "digit project", commonDir: "/src/2app/.git",
+			worktreeRoot: "/src/2app/main", wantPrefix: "2app-main-",
+		},
+		{
+			name: "hidden worktree only", commonDir: "/src/app/.git",
+			worktreeRoot: "/src/app/.main", wantPrefix: "app--main-",
+		},
+		{
+			name: "trailing punctuation", commonDir: "/src/app./.git",
+			worktreeRoot: "/src/app./main.", wantPrefix: "app--main--",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := Derive(tc.commonDir, tc.worktreeRoot)
+			want := tc.wantPrefix + HashPath(tc.worktreeRoot)
+			if got.Sandbox != want {
+				t.Errorf("Sandbox = %q, want %q", got.Sandbox, want)
+			}
+			if got.Sandbox == "" || !strings.ContainsRune("abcdefghijklmnopqrstuvwxyz0123456789", rune(got.Sandbox[0])) {
+				t.Errorf("Sandbox %q does not start with an alphanumeric character", got.Sandbox)
+			}
+		})
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ngscheurich/sbx/internal/cli"
 	"github.com/ngscheurich/sbx/internal/harness"
+	"github.com/ngscheurich/sbx/internal/identity"
 	"github.com/ngscheurich/sbx/internal/testsupport"
 )
 
@@ -83,6 +84,77 @@ func TestUpCreatesSandboxAndSnapshot(t *testing.T) {
 		if !strings.Contains(string(snap), want) {
 			t.Errorf("snapshot is missing %q:\n%s", want, snap)
 		}
+	}
+}
+
+func TestUpHiddenProjectLifecycle(t *testing.T) {
+	cases := []struct {
+		name       string
+		linked     bool
+		imageCheck bool
+	}{
+		{name: "main worktree"},
+		{name: "linked worktree", linked: true},
+		{name: "main worktree with Image check and Bootstrap", imageCheck: true},
+		{name: "linked worktree with Image check and Bootstrap", linked: true, imageCheck: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := testsupport.FakeMSB(t)
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			repo := filepath.Join(t.TempDir(), ".pi-sandbox")
+			if err := os.CopyFS(repo, os.DirFS(harness.SeedRepo(t))); err != nil {
+				t.Fatal(err)
+			}
+			worktree := repo
+			if tc.linked {
+				worktree = filepath.Join(t.TempDir(), ".pi-sandbox")
+				harness.Git(t, repo, "worktree", "add", worktree, "-b", "feature")
+			}
+			worktree = harness.Resolve(t, worktree)
+			toml := harness.PersistentTOML
+			wantCreates := 1
+			if tc.imageCheck {
+				toml = "image_check = \"image-check.sh\"\n" + bootstrapTOML
+				harness.WriteImageCheckScript(t, worktree, harness.CheckScript)
+				wantCreates++
+			}
+			harness.WriteFile(t, filepath.Join(worktree, "sbx.toml"), toml)
+			want := "sbx-pi-sandbox--pi-sandbox-" + identity.HashPath(worktree)
+
+			if got := harness.PlanIdentity(t, worktree); got != want {
+				t.Errorf("plan identity = %q, want %q", got, want)
+			}
+			for _, args := range [][]string{
+				{"up"},
+				{"up"},
+				{"status"},
+				{"exec", "--", "echo", "hello"},
+				{"logs"},
+				{"stop"},
+				{"up"},
+				{"rm", "--yes"},
+			} {
+				if code, _, stderr := harness.SbxRun(t, worktree, args, strings.NewReader("")); code != 0 {
+					t.Fatalf("sbx %s failed: %s", strings.Join(args, " "), stderr)
+				}
+			}
+			creates := 0
+			for _, call := range fake.Calls() {
+				if call.Args[0] == "create" {
+					creates++
+					if got := call.Args[2]; got != want && !strings.HasPrefix(got, want+"-imgchk-") {
+						t.Errorf("unexpected created sandbox name: %q", got)
+					}
+				}
+			}
+			if creates != wantCreates {
+				t.Errorf("create calls = %d, want %d", creates, wantCreates)
+			}
+			if _, err := os.Stat(snapshotPathOf(t, worktree)); !os.IsNotExist(err) {
+				t.Errorf("snapshot survived removal: %v", err)
+			}
+		})
 	}
 }
 

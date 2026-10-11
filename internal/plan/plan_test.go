@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -63,6 +64,50 @@ func TestComposeUsesOnlyGitPaths(t *testing.T) {
 	}
 	if p.VolumeNamespace != identity.VolumeNamespace("/src/app/.git") {
 		t.Errorf("VolumeNamespace = %q, want <hash of common git dir>", p.VolumeNamespace)
+	}
+}
+
+func TestComposeHiddenProjectUsesBackendSafeName(t *testing.T) {
+	t.Parallel()
+	cfg, err := config.Load(writeConfig(t, `
+image = "pi-sandbox"
+cpus = 1
+memory = "512M"
+
+[network]
+policy = "public"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := Compose(gitx.Info{
+		WorktreeRoot: "/Users/nick/.pi-sandbox",
+		CommonDir:    "/Users/nick/.pi-sandbox/.git",
+	}, cfg)
+	if p.TranslateErr != nil {
+		t.Fatal(p.TranslateErr)
+	}
+	want := "sbx-pi-sandbox--pi-sandbox-e7f4a653"
+	if p.Sandbox != want {
+		t.Errorf("Sandbox = %q, want %q", p.Sandbox, want)
+	}
+	if p.Project != ".pi-sandbox" {
+		t.Errorf("Project = %q, want .pi-sandbox", p.Project)
+	}
+	if p.VolumeNamespace != "e75e7549" {
+		t.Errorf("VolumeNamespace = %q, want e75e7549", p.VolumeNamespace)
+	}
+	if !strings.Contains(renderPlain(t, p), "msb create --name "+want+" pi-sandbox") {
+		t.Error("rendered plan does not create the backend-safe sandbox name")
+	}
+	wantArgv := []string{"msb", "create", "--name", want, "pi-sandbox",
+		"--cpus", "1", "--memory", "512M",
+		"--mount-dir", "/Users/nick/.pi-sandbox:/workspace",
+		"--label", "sbx.managed=1", "--label", "sbx.mode=persistent",
+		"--label", "sbx.worktree=/Users/nick/.pi-sandbox",
+	}
+	if got := p.JSON().CreateArgv; !reflect.DeepEqual(got, wantArgv) {
+		t.Errorf("JSON create argv = %q, want %q", got, wantArgv)
 	}
 }
 

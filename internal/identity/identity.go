@@ -76,7 +76,8 @@ type Identity struct {
 	Worktree string
 	// Hash is the 8-character hash of the worktree path.
 	Hash string
-	// Sandbox is the full Sandbox identity: project, worktree, and hash.
+	// Sandbox is the full Sandbox identity: project, worktree, and hash,
+	// prefixed with "sbx" when it would otherwise start with "-".
 	Sandbox string
 }
 
@@ -86,10 +87,15 @@ func Derive(commonDir, worktreeRoot string) Identity {
 	project := Sanitize(ProjectBasename(commonDir))
 	worktree := Sanitize(path.Base(worktreeRoot))
 	hash := HashPath(worktreeRoot)
+	sandbox := project + "-" + worktree + "-" + hash
+	// msb requires an alphanumeric first character; keep valid identities stable.
+	if strings.HasPrefix(sandbox, "-") {
+		sandbox = "sbx" + sandbox
+	}
 	return Identity{
 		Project:  project,
 		Worktree: worktree,
 		Hash:     hash,
-		Sandbox:  project + "-" + worktree + "-" + hash,
+		Sandbox:  sandbox,
 	}
 }

@@ -117,7 +117,7 @@ Allowlist policy and secrets enable TLS inspection, and msb installs its CA in t
 
 Before creation, sbx checks existing Project volumes for kind, size, and quota conflicts; it never resizes or overwrites them. Use a new logical name to change a shared definition. Named-directory quota enforcement remains unverified against the observed msb CLI versions; do not treat the configuration alone as proof of enforced capacity limits.
 
-Sandbox identity comes from the project basename, worktree basename, and an eight-character worktree-path hash, not configuration. Changing branches or configuration does not rename it. Moving a worktree changes its identity; moving the common Git directory orphans Project volumes. sbx does not adopt old or unowned resources.
+Sandbox identity comes from the project basename, worktree basename, and an eight-character worktree-path hash, not configuration. Names that would start with `-` get an `sbx` prefix because microsandbox requires an alphanumeric first character. Changing branches or configuration does not rename it. Moving a worktree changes its identity; moving the common Git directory orphans Project volumes. sbx does not adopt old or unowned resources.
 
 Creation-time settings include image contents, mounts, storage, resources, environment, network, secrets, and ports. Drift makes `up` and `exec` refuse reuse; `--allow-stale` explicitly permits it without recreating or repairing anything. `run` remains independent. Use `status` and `plan` to inspect drift, then deliberately remove/recreate only when losing private data is acceptable. Ownership labels guard against accidents, not hostile tampering.
 

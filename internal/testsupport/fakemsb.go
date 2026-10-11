@@ -273,6 +273,12 @@ create)
   while [ $# -gt 0 ]; do
     case "$1" in
     --name)
+      case "$2" in
+      -*)
+        echo "error: a value is required for '--name <NAME>' but none was supplied" >&2
+        exit 2
+        ;;
+      esac
       name="$2"
       shift 2
       ;;
