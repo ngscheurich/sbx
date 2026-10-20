@@ -47,6 +47,7 @@ read_only = true
 
 [network]
 policy = "public"
+host_ports = [3000]
 
 [secrets.OPENROUTER_API_KEY]
 from_env = "SBX_OPENROUTER_API_KEY"

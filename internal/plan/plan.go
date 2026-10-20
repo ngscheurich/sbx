@@ -436,6 +436,13 @@ func describeNetwork(n config.NetworkConfig) string {
 	default:
 		parts = append(parts, "policy public")
 	}
+	if len(n.HostPorts) > 0 {
+		ports := make([]string, 0, len(n.HostPorts))
+		for _, port := range n.HostPorts {
+			ports = append(ports, fmt.Sprintf("%d", port))
+		}
+		parts = append(parts, "host TCP ports "+strings.Join(ports, ", ")+" via host.microsandbox.internal (gateway DNS enabled)")
+	}
 	if len(n.DNSNameservers) > 0 {
 		parts = append(parts, "dns "+strings.Join(n.DNSNameservers, ", "))
 	}

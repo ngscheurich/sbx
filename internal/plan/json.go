@@ -79,6 +79,7 @@ type jsonSandboxVolume struct {
 type jsonNetwork struct {
 	Policy         string   `json:"policy"`
 	Allow          []string `json:"allow"`
+	HostPorts      []int    `json:"host_ports"`
 	DNSNameservers []string `json:"dns_nameservers"`
 	TLSIntercept   bool     `json:"tls_intercept"`
 	DenyByDefault  bool     `json:"deny_by_default"`
@@ -160,6 +161,7 @@ func (p Plan) JSON() jsonPlan {
 		Environment:    append([]string{}, tr.Options.Env...),
 		Network: jsonNetwork{
 			Policy: c.Network.Policy, Allow: append([]string{}, c.Network.Allow...),
+			HostPorts:      append([]int{}, c.Network.HostPorts...),
 			DNSNameservers: append([]string{}, tr.Options.DNSNameservers...),
 			TLSIntercept:   tr.Options.TLSIntercept || len(tr.SecretNames) > 0,
 			DenyByDefault:  c.Network.Policy == "allowlist",

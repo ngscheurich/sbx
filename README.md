@@ -84,7 +84,7 @@ TOML keys are checked strictly. Unknown keys, invalid values, conflicting guest 
 | `[workspace]` | Optional `target`, default `/workspace`. Binds the current worktree read-write and sets the guest working directory. |
 | `[[mounts]]` | `type = "bind"`, `source`, `target`, optional `read_only`; or `type = "tmpfs"`, `target`, `size`, optional `noexec` (default `false`). Bind sources may be absolute, worktree-relative, or start with `~`; guest targets must be absolute. |
 | `[volumes.<name>]` | `target`, required `scope = "sandbox"` or `"project"`, optional `kind = "dir"` (default) or `"disk"`. Disks require `size`; directories take no `size`. Optional `quota` is valid only for Project directory volumes. |
-| `[network]` | Required `policy = "public"`, `"allowlist"`, or `"none"`; `allow` only for allowlist mode, where it must be nonempty. Optional `dns_nameservers` accepts IP addresses or `IP:PORT`. No implicit network access. |
+| `[network]` | Required `policy = "public"`, `"allowlist"`, or `"none"`; `allow` only for allowlist mode, where it must be nonempty. Optional `host_ports` grants guest access to listed host TCP ports, 1–65535, with no duplicates; invalid with `none`. Optional `dns_nameservers` accepts IP addresses or `IP:PORT`. No implicit network access. |
 | `[ports.<name>]` | Required `guest` TCP port, 1–65535. Guest ports must be unique. Persistent sandboxes publish on `127.0.0.1`, using stable host reservations in 4001–4099. No host-port pinning or disposable publishing. |
 | `[env]` | String-valued guest environment variables. |
 | `[secrets.<name>]` | Required `from_env` host variable name and nonempty destination `allow` list. The guest receives a placeholder, never the real value from sbx. |
@@ -93,11 +93,11 @@ TOML keys are checked strictly. Unknown keys, invalid values, conflicting guest 
 | `[bootstrap]` | Required nonempty `run` when declared: guest shell code run once per new sandbox, in the Workspace. |
 | `[aliases]` | String-valued shorthands for sbx command lines. See below. |
 
-Volume and port names match `[a-z][a-z0-9_]*`; environment and secret names match `[A-Za-z_][A-Za-z0-9_]*`. Environment and secret names cannot collide. `policy = "none"` forbids ports and custom DNS because it blocks inbound and outbound traffic.
+Volume and port names match `[a-z][a-z0-9_]*`; environment and secret names match `[A-Za-z_][A-Za-z0-9_]*`. Environment and secret names cannot collide. `policy = "none"` forbids published ports, host access, and custom DNS because it blocks inbound and outbound traffic.
 
 ### Network and secrets
 
-`public` permits public destinations, not private or host networks. `allowlist` permits only exact domains or `*.`-prefixed suffixes of at least two labels; `*.example.com` also matches `example.com`. `none` blocks all traffic.
+`public` permits public destinations, not private or host networks. `allowlist` permits only exact domains or `*.`-prefixed suffixes of at least two labels; `*.example.com` also matches `example.com`. Either policy can grant additional host access through `host_ports`. `none` blocks all traffic.
 
 ```toml
 [network]
@@ -112,6 +112,20 @@ allow = ["example.com"]
 Export the host variable before creating or restarting a sandbox. A missing variable fails before resource changes. Secret values reach `msb` only through its environment; arguments, generated maps, state, Plan, and sbx-generated diagnostics contain names and references, not values. The backend substitutes the placeholder only on requests to that secret’s allowed destinations.
 
 Allowlist policy and secrets enable TLS inspection, and msb installs its CA in the guest system trust store. Programs with private CA bundles or certificate pinning need project-specific trust configuration. sbx does not redact guest output, logs, or backend tool output; do not print secrets there.
+
+#### Host services
+
+To reach a service on the host’s `localhost:3000`, opt in to that host TCP port:
+
+```toml
+[network]
+policy = "public"
+host_ports = [3000]
+```
+
+From inside the sandbox, use `http://host.microsandbox.internal:3000`, not `localhost:3000`; guest loopback belongs to the sandbox. This works in persistent sandboxes and disposable runs. `host_ports` adds host access without opening private networks or other host service ports, and enables gateway DNS over UDP/TCP port 53 so the host name can resolve. With `allowlist`, the declared domains still govern non-host connections, but gateway DNS queries are also permitted. This does not publish a guest service: `[ports]` handles the opposite direction, host to sandbox.
+
+Host access is a Creation-time setting. Inspect `sbx plan` or `sbx status` before deliberately removing and recreating an existing persistent sandbox; removal loses its private storage. `--allow-stale` keeps the old network policy and does not enable the new access. The native rules are documented by [microsandbox’s networking guide](https://docs.microsandbox.dev/networking/overview#reaching-the-host); sbx’s rule translation is tested with fakes, while live host connectivity and port isolation remain unverified.
 
 ### Storage, identity, and safety
 

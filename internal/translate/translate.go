@@ -145,6 +145,11 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 		},
 	}
 	switch cfg.Network.Policy {
+	case "public":
+		// Explicit rules replace msb’s implicit public allow.
+		if len(cfg.Network.HostPorts) > 0 {
+			options.NetRules = append(options.NetRules, "allow@public")
+		}
 	case "none":
 		options.NoNet = true
 	case "allowlist":
@@ -154,6 +159,15 @@ func Sandbox(info gitx.Info, cfg config.Config, mode string) (Translation, error
 		// Allowlist mode turns on msb's TLS inspection: strict hostname
 		// rules can only see the request authority of intercepted HTTPS.
 		options.TLSIntercept = true
+	}
+	if len(cfg.Network.HostPorts) > 0 {
+		// Gateway DNS is needed to resolve the host’s internal hostname.
+		options.NetRules = append(options.NetRules, "allow@dns")
+		hostPorts := append([]int(nil), cfg.Network.HostPorts...)
+		sort.Ints(hostPorts)
+		for _, port := range hostPorts {
+			options.NetRules = append(options.NetRules, fmt.Sprintf("allow@host:tcp:%d", port))
+		}
 	}
 	options.DNSNameservers = cfg.Network.DNSNameservers
 	// Any declared secret also turns on TLS inspection; msb does this

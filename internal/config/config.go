@@ -21,7 +21,7 @@ import (
 // than silently ignored.
 const supportedFields = `image, cpus, memory, shell, image_check, [workspace],
 [mounts], [volumes], [ports], [env], [secrets], [bootstrap], [aliases],
-[network] (with allow and dns_nameservers), and [build]`
+[network] (with allow, host_ports, and dns_nameservers), and [build]`
 
 // Config is the validated content of one worktree's sbx.toml.
 type Config struct {
@@ -151,6 +151,9 @@ type NetworkConfig struct {
 	Policy         string   `toml:"policy"`
 	Allow          []string `toml:"allow"`
 	DNSNameservers []string `toml:"dns_nameservers"`
+	// HostPorts permits guest connections to these host TCP ports in addition
+	// to Policy. It never publishes guest services or permits private networks.
+	HostPorts []int `toml:"host_ports"`
 }
 
 // Load parses and validates the sbx.toml at path.
@@ -535,7 +538,19 @@ func (n *NetworkConfig) validate() []string {
 			}
 		}
 	}
+	seenHostPorts := make(map[int]bool, len(n.HostPorts))
+	for _, port := range n.HostPorts {
+		if port < 1 || port > 65535 {
+			problems = append(problems, fmt.Sprintf("network: host_ports entry %d must be a TCP port between 1 and 65535", port))
+		} else if seenHostPorts[port] {
+			problems = append(problems, fmt.Sprintf("network: duplicate host_ports entry %d", port))
+		}
+		seenHostPorts[port] = true
+	}
 	if n.Policy == "none" {
+		if len(n.HostPorts) > 0 {
+			problems = append(problems, `network: host_ports is invalid with policy = "none", which allows no traffic at all`)
+		}
 		if len(n.DNSNameservers) > 0 {
 			problems = append(problems, `network: dns_nameservers is invalid with policy = "none", which allows no traffic at all`)
 		}

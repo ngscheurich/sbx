@@ -62,6 +62,7 @@
       "allow": [
         "example.com"
       ],
+      "host_ports": [],
       "dns_nameservers": [
         "1.1.1.1"
       ],

@@ -100,8 +100,8 @@ allow = [                     # required, non-empty: destinations the value may 
 ]
 
 # ── [network] ────────────────────────────────────────────────────────────────
-# Required. Network policy: "public" (all traffic), "allowlist" (only
-# declared destinations), or "none" (no traffic at all).
+# Required. Network policy: "public" (public destinations, not host/private
+# networks), "allowlist" (declared domains), or "none" (no traffic at all).
 
 [network]
 policy = "allowlist"
@@ -110,6 +110,11 @@ allow = [                     # required and non-empty iff policy = "allowlist";
   "*.docker.io",
   "registry.npmjs.org",
 ]
+# Optional host TCP access, added to "public" or "allowlist"; invalid with
+# "none". Unique ports from 1–65535; no host access when omitted or empty.
+# Use http://host.microsandbox.internal:3000 from the guest, not localhost.
+# Also enables gateway DNS over UDP/TCP port 53; does not publish guest ports.
+host_ports = [3000]
 dns_nameservers = [           # optional; invalid with policy = "none". IP or IP:PORT.
   "1.1.1.1",
   "8.8.8.8:53",

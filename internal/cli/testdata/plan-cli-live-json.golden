@@ -20,6 +20,7 @@
     "network": {
       "policy": "public",
       "allow": [],
+      "host_ports": [],
       "dns_nameservers": [],
       "tls_intercept": false,
       "deny_by_default": false
