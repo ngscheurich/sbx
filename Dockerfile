@@ -11,11 +11,14 @@ RUN apt-get update && \
     curl ca-certificates git nodejs npm fd-find ripgrep gcc libc6-dev && \
   rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /root/.local/bin && ln -s /usr/bin/fdfind /root/.local/bin/fd
+ENV PATH="/root/.local/bin:${PATH}"
+
 # Install microsandbox
 RUN curl -fsSL https://install.microsandbox.dev | sh
 
 # Install mise-en-place
-ENV PATH="/root/.local/bin:/root/.local/share/mise/shims:${PATH}" \
+ENV PATH="/root/.local/share/mise/shims:${PATH}" \
     MISE_TRUSTED_CONFIG_PATHS="/workspace"
 RUN set -eux; \
     curl -fsSL https://mise.run | MISE_VERSION="$MISE_VERSION" sh; \
